@@ -1,0 +1,227 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "18"
+
+jobs:
+  # Backend Tests and Quality Gates
+  backend-test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_USER: sprint_reports
+          POSTGRES_DB: sprint_reports_v2_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      working-directory: ./backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Code formatting check
+      working-directory: ./backend
+      run: |
+        black --check --diff .
+        isort --check-only --diff .
+    
+    - name: Linting
+      working-directory: ./backend
+      run: |
+        flake8 app/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 app/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Type checking
+      working-directory: ./backend
+      run: mypy app/
+    
+    - name: Run tests with coverage
+      working-directory: ./backend
+      env:
+        DATABASE_URL: postgresql+asyncpg://sprint_reports:password@localhost:5432/sprint_reports_v2_test
+        REDIS_URL: redis://localhost:6379/0
+        SECRET_KEY: test-secret-key-for-ci
+      run: |
+        pytest --cov=app --cov-report=xml --cov-report=html --cov-fail-under=80
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.xml
+        flags: backend
+
+  # Docker Build and Security Scan
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: backend-test
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: false
+        tags: sprint-reports:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        outputs: type=docker,dest=/tmp/sprint-reports.tar
+    
+    - name: Upload Docker image artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: sprint-reports-image
+        path: /tmp/sprint-reports.tar
+
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: sprint-reports-image
+        path: /tmp
+    
+    - name: Load Docker image
+      run: docker load --input /tmp/sprint-reports.tar
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'sprint-reports:${{ github.sha }}'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/python@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --file=backend/requirements.txt --severity-threshold=high
+
+  # SonarQube Analysis
+  sonarqube:
+    runs-on: ubuntu-latest
+    needs: backend-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for better analysis
+    
+    - name: Download coverage reports
+      uses: actions/download-artifact@v3
+      with:
+        name: coverage-reports
+        path: ./backend
+    
+    - name: SonarQube Scan
+      uses: sonarqube-quality-gate-action@master
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  # Deploy to Staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [security-scan, sonarqube]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: sprint-reports-image
+        path: /tmp
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add staging deployment commands here
+        # This could involve SSH to staging server, Docker Swarm, or Kubernetes deployment
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests against staging..."
+        # Add staging smoke tests here
+
+  # Deploy to Production (Blue-Green)
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [security-scan, sonarqube]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: sprint-reports-image
+        path: /tmp
+    
+    - name: Blue-Green Deployment
+      run: |
+        echo "Starting blue-green deployment to production..."
+        # Implement blue-green deployment logic here
+        # This would typically involve:
+        # 1. Deploy to green environment
+        # 2. Run health checks
+        # 3. Switch traffic from blue to green
+        # 4. Keep blue as rollback option

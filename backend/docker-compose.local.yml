@@ -1,0 +1,108 @@
+version: '3.8'
+
+# Local development configuration extending the main docker-compose.yml
+# This configuration provides isolated local development with different ports
+# to avoid conflicts with other projects
+
+services:
+  app:
+    build: .
+    ports:
+      - "3001:8000"  # Different port to avoid conflicts
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://sprint_reports:password@db:5432/sprint_reports_v2_local
+      - REDIS_URL=redis://redis:6379/1  # Different Redis database
+      - LOG_LEVEL=DEBUG
+      - ENABLE_REAL_TIME_UPDATES=true
+      - ENABLE_ML_INSIGHTS=false
+      - ENABLE_AUDIT_LOGGING=true
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./app:/app/app:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
+    networks:
+      - sprint-reports-local
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=sprint_reports
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=sprint_reports_v2_local  # Different database name
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    networks:
+      - sprint-reports-local
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    volumes:
+      - redis_data_local:/data
+    command: redis-server --appendonly yes --appendfsync everysec
+    networks:
+      - sprint-reports-local
+
+  celery:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://sprint_reports:password@db:5432/sprint_reports_v2_local
+      - REDIS_URL=redis://redis:6379/1
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./app:/app/app:ro
+    command: celery -A app.core.celery worker --loglevel=debug --concurrency=2
+    networks:
+      - sprint-reports-local
+
+  # Optional: Redis Commander for Redis GUI
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379:1
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - sprint-reports-local
+    profiles:
+      - tools
+
+  # Optional: pgAdmin for PostgreSQL GUI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=dev@sprintreports.local
+      - PGADMIN_DEFAULT_PASSWORD=password
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+    volumes:
+      - pgadmin_data_local:/var/lib/pgadmin
+    networks:
+      - sprint-reports-local
+    profiles:
+      - tools
+
+volumes:
+  postgres_data_local:
+    driver: local
+  redis_data_local:
+    driver: local
+  pgadmin_data_local:
+    driver: local
+
+networks:
+  sprint-reports-local:
+    driver: bridge

@@ -1,0 +1,13 @@
+# Snyk configuration for Sprint Reports v2
+version: v1.0.0
+language-settings:
+  python: '3.11'
+exclude:
+  code:
+    - '*/tests/*'
+    - '*/test_*'
+    - '*/*test*.py'
+  global:
+    - '*/venv/*'
+    - '*/node_modules/*'
+    - '*/__pycache__/*'

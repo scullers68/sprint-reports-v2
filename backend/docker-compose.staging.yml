@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: production
+    ports:
+      - "8001:8000"  # Different port for staging
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://sprint_reports_staging:${STAGING_DB_PASSWORD}@db:5432/sprint_reports_v2_staging
+      - REDIS_URL=redis://redis:6379/1  # Different Redis DB
+      - SECRET_KEY=${STAGING_SECRET_KEY}
+      - ALLOWED_HOSTS=staging.sprint-reports.com,localhost
+      - CORS_ORIGINS=https://staging.sprint-reports.com,http://localhost:3000
+      - LOG_LEVEL=debug
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - sprint-reports-staging
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=sprint_reports_staging
+      - POSTGRES_PASSWORD=${STAGING_DB_PASSWORD}
+      - POSTGRES_DB=sprint_reports_v2_staging
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sprint_reports_staging -d sprint_reports_v2_staging"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sprint-reports-staging
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_staging_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sprint-reports-staging
+
+  celery:
+    build:
+      context: .
+      target: production
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://sprint_reports_staging:${STAGING_DB_PASSWORD}@db:5432/sprint_reports_v2_staging
+      - REDIS_URL=redis://redis:6379/1
+      - SECRET_KEY=${STAGING_SECRET_KEY}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    command: celery -A app.core.celery worker --loglevel=info
+    networks:
+      - sprint-reports-staging
+
+volumes:
+  postgres_staging_data:
+  redis_staging_data:
+
+networks:
+  sprint-reports-staging:
+    driver: bridge

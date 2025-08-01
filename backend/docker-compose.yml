@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://sprint_reports:password@db:5432/sprint_reports_v2
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./app:/app/app:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=sprint_reports
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=sprint_reports_v2
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  celery:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://sprint_reports:password@db:5432/sprint_reports_v2
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./app:/app/app:ro
+    command: celery -A app.core.celery worker --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
