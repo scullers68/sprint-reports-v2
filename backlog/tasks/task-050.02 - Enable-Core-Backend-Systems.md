@@ -1,11 +1,16 @@
 ---
 id: task-050.02
 title: Enable Core Backend Systems
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-02'
-labels: ['mvp', 'backend', 'api']
-dependencies: ['task-050.01']
+updated_date: '2025-08-02'
+labels:
+  - mvp
+  - backend
+  - api
+dependencies:
+  - task-050.01
 ---
 
 ## Description
