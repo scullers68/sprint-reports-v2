@@ -117,8 +117,8 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
         if payload.get("type") != token_type:
             return None
             
-        user_id: int = payload.get("sub")
-        email: str = payload.get("email")
+        user_id: int = payload.get("user_id")
+        email: str = payload.get("sub")  # sub contains the email
         username: str = payload.get("username")
         
         if user_id is None:

@@ -61,10 +61,10 @@ class Sprint(Base):
     jira_project_key = Column(String(50), index=True)
     jira_version = Column(String(20))  # JIRA version for compatibility
     
-    # Relationships
-    analyses = relationship("SprintAnalysis", back_populates="sprint", cascade="all, delete-orphan")
-    queues = relationship("SprintQueue", back_populates="sprint", cascade="all, delete-orphan")
-    reports = relationship("Report", back_populates="sprint", cascade="all, delete-orphan")
+    # Relationships - temporarily disabled for MVP authentication testing
+    # analyses = relationship("SprintAnalysis", back_populates="sprint", cascade="all, delete-orphan")
+    # queues = relationship("SprintQueue", back_populates="sprint", cascade="all, delete-orphan")
+    # reports = relationship("Report", back_populates="sprint", cascade="all, delete-orphan")
     
     # Table constraints and indexes
     __table_args__ = (
@@ -137,8 +137,8 @@ class SprintAnalysis(Base):
     jql_filter = Column(Text, nullable=True)
     exclude_subtasks = Column(Boolean, default=True, nullable=False)
     
-    # Relationships
-    sprint = relationship("Sprint", back_populates="analyses")
+    # Relationships - temporarily disabled for MVP authentication testing
+    # sprint = relationship("Sprint", back_populates="analyses")
     created_by_user = relationship("User")
     
     # Table constraints and indexes

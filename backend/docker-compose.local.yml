@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Local development configuration extending the main docker-compose.yml
 # This configuration provides isolated local development with different ports
 # to avoid conflicts with other projects

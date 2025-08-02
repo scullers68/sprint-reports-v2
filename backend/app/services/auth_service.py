@@ -118,7 +118,7 @@ class AuthenticationService:
         else:
             expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         
-        to_encode.update({"exp": expire})
+        to_encode.update({"exp": expire, "type": "access"})
         encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
         return encoded_jwt
     
@@ -156,6 +156,9 @@ class AuthenticationService:
         user = await self.authenticate_user(email, password)
         if not user:
             raise ValueError("Invalid email or password")
+        
+        # Ensure user is properly loaded with all attributes
+        await self.db.refresh(user)
         
         # Create access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -228,6 +231,10 @@ class AuthenticationService:
             self.db.add(user)
             await self.db.commit()
             await self.db.refresh(user)
+            
+            # Ensure all attributes are loaded
+            _ = user.created_at  # Access to ensure loading
+            _ = user.updated_at
             
             # TODO: Assign default role when RBAC relationships are fixed
             # result = await self.db.execute(
@@ -949,4 +956,199 @@ class AuthenticationService:
             
         except Exception as e:
             logger.error(f"User deprovisioning failed", user_id=user_id, error=str(e))
+            return False
+    
+    # User Management Methods (for user endpoints)
+    
+    async def get_users(self, skip: int = 0, limit: int = 100, active_only: bool = True) -> list[User]:
+        """
+        Get list of users with pagination.
+        
+        Args:
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+            active_only: If True, only return active users
+            
+        Returns:
+            List of User objects
+        """
+        try:
+            query = select(User)
+            
+            if active_only:
+                query = query.where(User.is_active == True)
+            
+            query = query.offset(skip).limit(limit).order_by(User.created_at.desc())
+            
+            result = await self.db.execute(query)
+            users = result.scalars().all()
+            
+            logger.info(f"Retrieved {len(users)} users", skip=skip, limit=limit, active_only=active_only)
+            return list(users)
+            
+        except Exception as e:
+            logger.error(f"Failed to get users", error=str(e))
+            return []
+    
+    async def get_user_by_id(self, user_id: int) -> Optional[User]:
+        """
+        Get user by ID.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            User object if found, None otherwise
+        """
+        try:
+            result = await self.db.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if user:
+                logger.info(f"Retrieved user by ID", user_id=user_id, email=user.email)
+            else:
+                logger.warning(f"User not found", user_id=user_id)
+            
+            return user
+            
+        except Exception as e:
+            logger.error(f"Failed to get user by ID", user_id=user_id, error=str(e))
+            return None
+    
+    async def update_user(self, user_id: int, user_update) -> Optional[User]:
+        """
+        Update user profile.
+        
+        Args:
+            user_id: User ID
+            user_update: UserUpdate schema with update data
+            
+        Returns:
+            Updated User object if successful, None otherwise
+        """
+        try:
+            result = await self.db.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                logger.warning(f"User not found for update", user_id=user_id)
+                return None
+            
+            # Update user fields
+            if user_update.full_name is not None:
+                user.full_name = user_update.full_name
+            if user_update.department is not None:
+                user.department = user_update.department
+            if user_update.role is not None:
+                user.role = user_update.role
+            if user_update.avatar_url is not None:
+                user.avatar_url = user_update.avatar_url
+            
+            await self.db.commit()
+            await self.db.refresh(user)
+            
+            logger.info(f"User updated successfully", user_id=user_id, email=user.email)
+            return user
+            
+        except Exception as e:
+            logger.error(f"Failed to update user", user_id=user_id, error=str(e))
+            await self.db.rollback()
+            return None
+    
+    async def deactivate_user(self, user_id: int) -> bool:
+        """
+        Deactivate user account.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            result = await self.db.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                logger.warning(f"User not found for deactivation", user_id=user_id)
+                return False
+            
+            user.is_active = False
+            await self.db.commit()
+            
+            logger.info(f"User deactivated", user_id=user_id, email=user.email)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to deactivate user", user_id=user_id, error=str(e))
+            await self.db.rollback()
+            return False
+    
+    async def activate_user(self, user_id: int) -> bool:
+        """
+        Activate user account.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            result = await self.db.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                logger.warning(f"User not found for activation", user_id=user_id)
+                return False
+            
+            user.is_active = True
+            await self.db.commit()
+            
+            logger.info(f"User activated", user_id=user_id, email=user.email)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to activate user", user_id=user_id, error=str(e))
+            await self.db.rollback()
+            return False
+    
+    async def unlock_user_account(self, user_id: int) -> bool:
+        """
+        Unlock user account by clearing failed login attempts and lock time.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            result = await self.db.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                logger.warning(f"User not found for unlock", user_id=user_id)
+                return False
+            
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            await self.db.commit()
+            
+            logger.info(f"User account unlocked", user_id=user_id, email=user.email)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to unlock user account", user_id=user_id, error=str(e))
+            await self.db.rollback()
             return False

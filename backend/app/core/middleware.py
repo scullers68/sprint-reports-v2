@@ -618,7 +618,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.exempt_paths = exempt_paths or [
             "/docs", "/redoc", "/openapi.json", "/health", 
-            "/api/v1/auth/login", "/api/v1/auth/refresh"
+            "/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh"
         ]
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -854,6 +854,130 @@ def get_current_user_permissions(request: Request) -> list[str]:
     return []
 
 
+class JWTAuthenticationMiddleware(BaseHTTPMiddleware):
+    """
+    JWT authentication middleware for handling Bearer token validation.
+    
+    Handles JWT tokens from Authorization headers and sets user context.
+    """
+
+    def __init__(self, app, exempt_paths: list = None):
+        """
+        Initialize JWT authentication middleware.
+        
+        Args:
+            app: FastAPI application instance
+            exempt_paths: List of paths exempt from authentication checks
+        """
+        super().__init__(app)
+        self.exempt_paths = exempt_paths or [
+            "/docs", "/redoc", "/openapi.json", "/health",
+            "/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh",
+            "/api/v1/auth/password/reset-request", "/api/v1/auth/password/reset-confirm",
+            "/api/v1/auth/sso"
+            # Note: /api/v1/auth/logout is NOT exempt because it requires authentication
+        ]
+        # Add exact match for root path
+        self.exempt_exact_paths = ["/"]
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """
+        Process request with JWT authentication.
+        
+        Args:
+            request: The incoming HTTP request
+            call_next: The next middleware/endpoint in the chain
+            
+        Returns:
+            Response: HTTP response with authentication applied
+        """
+        path = request.url.path
+        correlation_id = get_correlation_id(request)
+        
+        logger.debug(
+            "JWT middleware processing request",
+            path=path,
+            method=request.method,
+            correlation_id=correlation_id
+        )
+        
+        # Skip authentication for exempt paths
+        matching_exempt_path = None
+        
+        # Check exact matches first
+        if path in self.exempt_exact_paths:
+            matching_exempt_path = path
+        else:
+            # Check prefix matches
+            for exempt_path in self.exempt_paths:
+                if path.startswith(exempt_path):
+                    matching_exempt_path = exempt_path
+                    break
+        
+        if matching_exempt_path:
+            logger.debug(
+                "JWT middleware skipping exempt path",
+                path=path,
+                matched_exempt_path=matching_exempt_path,
+                correlation_id=correlation_id
+            )
+            return await call_next(request)
+        
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
+        # Extract JWT token from Authorization header
+        authorization = request.headers.get("Authorization")
+        if not authorization or not authorization.startswith("Bearer "):
+            # No token provided, let authorization middleware handle this
+            return await call_next(request)
+        
+        token = authorization.split(" ")[1]
+        
+        # Validate JWT token and set user context
+        try:
+            from app.core.security import verify_token, get_user_by_id
+            from app.core.database import async_session
+            
+            # Verify the JWT token
+            token_data = verify_token(token, "access")
+            
+            if not token_data or not token_data.user_id:
+                logger.debug(
+                    "JWT token verification failed",
+                    path=path,
+                    correlation_id=correlation_id
+                )
+                return await call_next(request)
+            
+            # Get user from database
+            async with async_session() as db:
+                user = await get_user_by_id(db, token_data.user_id)
+                if user and user.is_active:
+                    # Set user in request state for authorization middleware
+                    request.state.user = user
+                    logger.debug(
+                        "JWT authentication successful",
+                        user_id=user.id,
+                        path=path,
+                        correlation_id=correlation_id
+                    )
+                    
+        except Exception as e:
+            # Log authentication error but don't block request
+            # Let authorization middleware handle the missing user
+            logger.warning(
+                "JWT authentication failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                path=path,
+                correlation_id=correlation_id
+            )
+        
+        return await call_next(request)
+
+
 class SSOAuthenticationMiddleware(BaseHTTPMiddleware):
     """
     SSO authentication middleware for handling SSO token validation.
@@ -954,6 +1078,7 @@ def add_custom_middleware(app):
     app.add_middleware(SSOAuthenticationMiddleware)
     app.add_middleware(SecurityAuditMiddleware)
     app.add_middleware(AuthorizationMiddleware)
+    app.add_middleware(JWTAuthenticationMiddleware)  # Add JWT auth before authorization
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(ErrorHandlingMiddleware)

@@ -102,7 +102,7 @@ class FieldMappingTemplate(Base):
     
     # Relationships
     mappings = relationship("FieldMapping", back_populates="template", cascade="all, delete-orphan")
-    parent_template = relationship("FieldMappingTemplate", remote_side=[id])
+    parent_template = relationship("FieldMappingTemplate", remote_side="FieldMappingTemplate.id")
     
     def __repr__(self) -> str:
         return f"<FieldMappingTemplate(name='{self.name}', version='{self.version}')>"
