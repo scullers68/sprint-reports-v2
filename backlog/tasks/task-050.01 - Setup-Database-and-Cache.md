@@ -2,7 +2,8 @@
 id: task-050.01
 title: Setup Database and Cache
 status: In Progress
-assignee: []
+assignee:
+  - Claude Code
 created_date: '2025-08-02'
 updated_date: '2025-08-02'
 labels:
