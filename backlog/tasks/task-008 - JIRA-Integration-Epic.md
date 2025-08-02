@@ -1,9 +1,11 @@
 ---
 id: task-008
 title: JIRA Integration Epic
-status: In Progress
-assignee: [architecture-analyzer]
+status: To Do
+assignee:
+  - architecture-analyzer
 created_date: '2025-08-01'
+updated_date: '2025-08-02'
 labels: []
 dependencies: []
 ---
