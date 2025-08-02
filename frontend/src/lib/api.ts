@@ -14,7 +14,7 @@ import {
 } from '@/types/api';
 
 // API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_VERSION = 'v1';
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 const MAX_RETRIES = 3;
@@ -68,6 +68,11 @@ class TokenManager {
       if (this.expiresAt) {
         localStorage.setItem('token_expires_at', this.expiresAt.toString());
       }
+      
+      // Also set cookie for middleware to access
+      const expires = expiresIn ? new Date(Date.now() + (expiresIn * 1000)).toUTCString() : '';
+      const expiresAttribute = expires ? `; expires=${expires}` : '';
+      document.cookie = `access_token=${token}; path=/${expiresAttribute}; SameSite=Lax`;
     }
   }
 
@@ -101,6 +106,9 @@ class TokenManager {
       localStorage.removeItem('token_type');
       localStorage.removeItem('token_expires_at');
       localStorage.removeItem('user');
+      
+      // Also clear the cookie
+      document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax';
     }
   }
 }
@@ -253,39 +261,55 @@ class ApiClient {
 
   // Authentication Methods
   async login(credentials: LoginRequest): Promise<AuthResponse> {
-    const response = await this.post<AuthResponse>('/auth/login', credentials);
+    const response = await this.post<any>('/auth/login', credentials);
+    
+    // Handle backend response format: { user: {}, token: { access_token, ... } }
+    const authResponse: AuthResponse = {
+      access_token: response.token.access_token,
+      token_type: response.token.token_type,
+      expires_in: response.token.expires_in,
+      user: response.user
+    };
     
     // Store token
     this.tokenManager.setToken(
-      response.access_token,
-      response.token_type,
-      response.expires_in
+      authResponse.access_token,
+      authResponse.token_type,
+      authResponse.expires_in
     );
     
     // Store user info
     if (typeof window !== 'undefined') {
-      localStorage.setItem('user', JSON.stringify(response.user));
+      localStorage.setItem('user', JSON.stringify(authResponse.user));
     }
     
-    return response;
+    return authResponse;
   }
 
   async register(userData: RegisterRequest): Promise<AuthResponse> {
-    const response = await this.post<AuthResponse>('/auth/register', userData);
+    const response = await this.post<any>('/auth/register', userData);
+    
+    // Handle backend response format: { user: {}, token: { access_token, ... } }
+    const authResponse: AuthResponse = {
+      access_token: response.token.access_token,
+      token_type: response.token.token_type,
+      expires_in: response.token.expires_in,
+      user: response.user
+    };
     
     // Store token
     this.tokenManager.setToken(
-      response.access_token,
-      response.token_type,
-      response.expires_in
+      authResponse.access_token,
+      authResponse.token_type,
+      authResponse.expires_in
     );
     
     // Store user info
     if (typeof window !== 'undefined') {
-      localStorage.setItem('user', JSON.stringify(response.user));
+      localStorage.setItem('user', JSON.stringify(authResponse.user));
     }
     
-    return response;
+    return authResponse;
   }
 
   async logout(): Promise<void> {
@@ -300,7 +324,7 @@ class ApiClient {
   }
 
   async getCurrentUser(): Promise<User> {
-    return this.get<User>('/auth/me');
+    return this.get<User>('/users/me');
   }
 
   // SSO Methods

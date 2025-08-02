@@ -36,27 +36,40 @@ export function useAuth(): AuthState & AuthActions {
       
       // Check if user is authenticated using existing TokenManager
       if (apiClient.isAuthenticated()) {
-        // Try to get user info from localStorage first
-        const storedUser = typeof window !== 'undefined' 
-          ? localStorage.getItem('user') 
-          : null;
-        
-        if (storedUser) {
-          const user = JSON.parse(storedUser);
+        try {
+          // Try to get user info from localStorage first
+          const storedUser = typeof window !== 'undefined' 
+            ? localStorage.getItem('user') 
+            : null;
+          
+          if (storedUser) {
+            const user = JSON.parse(storedUser);
+            setState(prev => ({
+              ...prev,
+              user,
+              isAuthenticated: true,
+              isLoading: false,
+            }));
+          } else {
+            // Fetch current user from API
+            const user = await apiClient.getCurrentUser();
+            setState(prev => ({
+              ...prev,
+              user,
+              isAuthenticated: true,
+              isLoading: false,
+            }));
+          }
+        } catch (apiError: any) {
+          // API call failed, clear auth and set as unauthenticated
+          console.warn('User API call failed, clearing auth:', apiError);
+          apiClient.clearAuth();
           setState(prev => ({
             ...prev,
-            user,
-            isAuthenticated: true,
+            user: null,
+            isAuthenticated: false,
             isLoading: false,
-          }));
-        } else {
-          // Fetch current user from API
-          const user = await apiClient.getCurrentUser();
-          setState(prev => ({
-            ...prev,
-            user,
-            isAuthenticated: true,
-            isLoading: false,
+            error: null, // Don't show error for failed auth check
           }));
         }
       } else {
@@ -76,7 +89,7 @@ export function useAuth(): AuthState & AuthActions {
         user: null,
         isAuthenticated: false,
         isLoading: false,
-        error: error.message || 'Authentication check failed',
+        error: null, // Don't show error for initial auth check
       }));
     }
   };

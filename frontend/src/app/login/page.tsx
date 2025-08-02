@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Header } from '@/components/layout/Header';
-import { SSOProviderSelect } from '@/components/auth/SSOProviderSelect';
 import { useAuthContext } from '@/contexts/AuthContext';
 
 interface FormData {
@@ -122,119 +121,106 @@ export default function LoginPage() {
 
           <div className="card">
             <div className="card-body">
-              <SSOProviderSelect />
-              
-              <div className="mt-6">
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300" />
+              <form className="space-y-6" onSubmit={handleSubmit}>
+                {/* General Error Message */}
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="ml-3">
+                        <p className="text-sm text-red-800">{error}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="bg-white px-2 text-gray-500">Or continue with</span>
+                )}
+
+                <div>
+                  <label htmlFor="email" className="form-label">
+                    Email address
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    className={getInputClassName('email')}
+                    placeholder="Enter your email"
+                    disabled={isSubmitting || isLoading}
+                  />
+                  {formErrors.email && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="password" className="form-label">
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    className={getInputClassName('password')}
+                    placeholder="Enter your password"
+                    disabled={isSubmitting || isLoading}
+                  />
+                  {formErrors.password && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.password}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <input
+                      id="remember-me"
+                      name="remember-me"
+                      type="checkbox"
+                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                      disabled={isSubmitting || isLoading}
+                    />
+                    <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
+                      Remember me
+                    </label>
+                  </div>
+
+                  <div className="text-sm">
+                    <a href="#" className="font-medium text-primary-600 hover:text-primary-500">
+                      Forgot your password?
+                    </a>
                   </div>
                 </div>
 
-                <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
-                  {/* General Error Message */}
-                  {error && (
-                    <div className="bg-red-50 border border-red-200 rounded-md p-4">
-                      <div className="flex">
-                        <div className="flex-shrink-0">
-                          <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                        <div className="ml-3">
-                          <p className="text-sm text-red-800">{error}</p>
-                        </div>
+                <div>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || isLoading}
+                    className="btn-primary w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting || isLoading ? (
+                      <div className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Signing in...
                       </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label htmlFor="email" className="form-label">
-                      Email address
-                    </label>
-                    <input
-                      id="email"
-                      name="email"
-                      type="email"
-                      autoComplete="email"
-                      required
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className={getInputClassName('email')}
-                      placeholder="Enter your email"
-                      disabled={isSubmitting || isLoading}
-                    />
-                    {formErrors.email && (
-                      <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
+                    ) : (
+                      'Sign in'
                     )}
-                  </div>
-
-                  <div>
-                    <label htmlFor="password" className="form-label">
-                      Password
-                    </label>
-                    <input
-                      id="password"
-                      name="password"
-                      type="password"
-                      autoComplete="current-password"
-                      required
-                      value={formData.password}
-                      onChange={handleInputChange}
-                      className={getInputClassName('password')}
-                      placeholder="Enter your password"
-                      disabled={isSubmitting || isLoading}
-                    />
-                    {formErrors.password && (
-                      <p className="mt-1 text-sm text-red-600">{formErrors.password}</p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <input
-                        id="remember-me"
-                        name="remember-me"
-                        type="checkbox"
-                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                        disabled={isSubmitting || isLoading}
-                      />
-                      <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-                        Remember me
-                      </label>
-                    </div>
-
-                    <div className="text-sm">
-                      <a href="#" className="font-medium text-primary-600 hover:text-primary-500">
-                        Forgot your password?
-                      </a>
-                    </div>
-                  </div>
-
-                  <div>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || isLoading}
-                      className="btn-primary w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isSubmitting || isLoading ? (
-                        <div className="flex items-center">
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Signing in...
-                        </div>
-                      ) : (
-                        'Sign in'
-                      )}
-                    </button>
-                  </div>
-                </form>
-              </div>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
