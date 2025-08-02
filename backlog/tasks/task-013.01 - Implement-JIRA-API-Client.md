@@ -1,9 +1,11 @@
 ---
 id: task-013.01
 title: Implement JIRA API Client
-status: In Progress
-assignee: [claude-code]
+status: To Do
+assignee:
+  - claude-code
 created_date: '2025-08-01'
+updated_date: '2025-08-02'
 labels: []
 dependencies: []
 parent_task_id: task-013
