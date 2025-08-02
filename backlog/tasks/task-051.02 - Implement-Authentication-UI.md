@@ -1,11 +1,16 @@
 ---
 id: task-051.02
 title: Implement Authentication UI
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-02'
-labels: ['mvp', 'frontend', 'authentication']
-dependencies: ['task-051.01']
+updated_date: '2025-08-02'
+labels:
+  - mvp
+  - frontend
+  - authentication
+dependencies:
+  - task-051.01
 ---
 
 ## Description
