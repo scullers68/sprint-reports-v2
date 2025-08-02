@@ -1,10 +1,10 @@
 ---
 id: task-007.05
 title: Implement Data Encryption
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2025-08-01'
-updated_date: '2025-08-01'
+updated_date: '2025-08-02'
 labels: []
 dependencies: []
 parent_task_id: task-007
