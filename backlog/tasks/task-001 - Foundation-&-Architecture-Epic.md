@@ -1,10 +1,10 @@
 ---
 id: task-001
 title: Foundation & Architecture Epic
-status: In Progress
+status: Done
 assignee: []
 created_date: '2025-08-01'
-updated_date: '2025-08-01'
+updated_date: '2025-08-02'
 labels: []
 dependencies: []
 ---
