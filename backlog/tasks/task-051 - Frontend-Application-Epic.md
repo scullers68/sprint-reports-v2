@@ -1,12 +1,16 @@
 ---
 id: task-051
 title: Frontend Application Epic
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-02'
 updated_date: '2025-08-02'
-labels: ['mvp', 'frontend', 'epic']
-dependencies: ['task-050']
+labels:
+  - mvp
+  - frontend
+  - epic
+dependencies:
+  - task-050
 ---
 
 ## Description
