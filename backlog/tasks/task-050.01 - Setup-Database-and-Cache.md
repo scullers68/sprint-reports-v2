@@ -1,10 +1,14 @@
 ---
 id: task-050.01
 title: Setup Database and Cache
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-02'
-labels: ['mvp', 'database', 'infrastructure']
+updated_date: '2025-08-02'
+labels:
+  - mvp
+  - database
+  - infrastructure
 dependencies: []
 ---
 
