@@ -33,6 +33,8 @@ except ImportError:
 
 from app.core.config import settings
 from app.models.user import User
+from app.models.role import Role
+from app.schemas.auth import UserRegister, Token
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -59,9 +61,9 @@ class AuthenticationService:
             User object if authentication successful, None otherwise
         """
         try:
-            # Get user by email
+            # Get user by email - avoid relationship loading for now
             result = await self.db.execute(
-                select(User).where(User.email == email.lower(), User.is_active == True)
+                select(User).where(User.email == email.lower(), User.is_active == True).options()
             )
             user = result.scalar_one_or_none()
             
@@ -135,6 +137,295 @@ class AuthenticationService:
         )
         user = result.scalar_one_or_none()
         return user
+    
+    async def authenticate_and_login(self, email: str, password: str) -> Tuple[User, Token]:
+        """
+        Authenticate user and create login token.
+        
+        Args:
+            email: User email address
+            password: Plain text password
+            
+        Returns:
+            Tuple of (User, Token) objects
+            
+        Raises:
+            ValueError: If authentication fails
+        """
+        # Authenticate user
+        user = await self.authenticate_user(email, password)
+        if not user:
+            raise ValueError("Invalid email or password")
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = self.create_access_token(
+            data={"sub": user.email, "user_id": user.id},
+            expires_delta=access_token_expires
+        )
+        
+        # Create refresh token (simplified - in production should be stored securely)
+        refresh_token_expires = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        refresh_token = self.create_access_token(
+            data={"sub": user.email, "user_id": user.id, "type": "refresh"},
+            expires_delta=refresh_token_expires
+        )
+        
+        # Create token response
+        token = Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        
+        logger.info(f"User login successful", email=email, user_id=user.id)
+        return user, token
+    
+    async def register_user(self, user_data: UserRegister) -> User:
+        """
+        Register a new user.
+        
+        Args:
+            user_data: User registration data
+            
+        Returns:
+            Created User object
+            
+        Raises:
+            ValueError: If registration fails (duplicate email, etc.)
+        """
+        try:
+            # Check if user already exists
+            result = await self.db.execute(
+                select(User).where(User.email == user_data.email.lower())
+            )
+            existing_user = result.scalar_one_or_none()
+            if existing_user:
+                raise ValueError("A user with this email already exists")
+            
+            # Check if username is taken
+            result = await self.db.execute(
+                select(User).where(User.username == user_data.username)
+            )
+            existing_username = result.scalar_one_or_none()
+            if existing_username:
+                raise ValueError("This username is already taken")
+            
+            # Hash password
+            hashed_password = self.get_password_hash(user_data.password)
+            
+            # Create user
+            user = User(
+                email=user_data.email.lower(),
+                username=user_data.username,
+                full_name=user_data.full_name or "",
+                hashed_password=hashed_password,
+                is_active=True,
+                is_superuser=False
+            )
+            
+            self.db.add(user)
+            await self.db.commit()
+            await self.db.refresh(user)
+            
+            # TODO: Assign default role when RBAC relationships are fixed
+            # result = await self.db.execute(
+            #     select(Role).where(Role.name == "viewer", Role.is_active == True)
+            # )
+            # default_role = result.scalar_one_or_none()
+            # if default_role:
+            #     user.add_role(default_role)
+            #     await self.db.commit()
+            #     await self.db.refresh(user)
+            
+            logger.info(f"User registered successfully", email=user.email, username=user.username)
+            return user
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"User registration failed", email=user_data.email, error=str(e))
+            await self.db.rollback()
+            raise ValueError("Failed to register user")
+    
+    async def refresh_token(self, refresh_token: str) -> Token:
+        """
+        Refresh authentication token.
+        
+        Args:
+            refresh_token: Current refresh token
+            
+        Returns:
+            New Token object
+            
+        Raises:
+            ValueError: If refresh token is invalid
+        """
+        try:
+            # Decode refresh token
+            payload = jwt.decode(refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            email: str = payload.get("sub")
+            token_type: str = payload.get("type")
+            
+            if email is None or token_type != "refresh":
+                raise ValueError("Invalid refresh token")
+            
+            # Get user
+            result = await self.db.execute(
+                select(User).where(User.email == email, User.is_active == True)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                raise ValueError("User not found")
+            
+            # Create new tokens
+            access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token = self.create_access_token(
+                data={"sub": user.email, "user_id": user.id},
+                expires_delta=access_token_expires
+            )
+            
+            refresh_token_expires = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+            new_refresh_token = self.create_access_token(
+                data={"sub": user.email, "user_id": user.id, "type": "refresh"},
+                expires_delta=refresh_token_expires
+            )
+            
+            token = Token(
+                access_token=access_token,
+                refresh_token=new_refresh_token,
+                token_type="bearer",
+                expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            )
+            
+            logger.info(f"Token refreshed", email=email, user_id=user.id)
+            return token
+            
+        except JWTError:
+            raise ValueError("Invalid refresh token")
+        except Exception as e:
+            logger.error(f"Token refresh failed", error=str(e))
+            raise ValueError("Failed to refresh token")
+    
+    async def request_password_reset(self, email: str) -> bool:
+        """
+        Request password reset token.
+        
+        Args:
+            email: User email address
+            
+        Returns:
+            True if reset email was sent (or would have been sent)
+        """
+        try:
+            # Get user by email
+            result = await self.db.execute(
+                select(User).where(User.email == email.lower(), User.is_active == True)
+            )
+            user = result.scalar_one_or_none()
+            
+            if user:
+                # Generate reset token
+                reset_token = secrets.token_urlsafe(32)
+                reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+                
+                # Store reset token
+                user.reset_token = reset_token
+                user.reset_token_expires = reset_token_expires
+                await self.db.commit()
+                
+                # TODO: Send email with reset token
+                # For now, just log the token (in production, send email)
+                logger.info(f"Password reset requested", email=email, reset_token=reset_token)
+            
+            # Always return True to prevent email enumeration
+            return True
+            
+        except Exception as e:
+            logger.error(f"Password reset request failed", email=email, error=str(e))
+            return True  # Still return True to prevent enumeration
+    
+    async def reset_password(self, token: str, new_password: str) -> bool:
+        """
+        Reset user password with token.
+        
+        Args:
+            token: Password reset token
+            new_password: New password
+            
+        Returns:
+            True if password was reset successfully
+        """
+        try:
+            # Find user by reset token
+            result = await self.db.execute(
+                select(User).where(
+                    User.reset_token == token,
+                    User.reset_token_expires > datetime.now(timezone.utc),
+                    User.is_active == True
+                )
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                return False
+            
+            # Update password and clear reset token
+            user.hashed_password = self.get_password_hash(new_password)
+            user.reset_token = None
+            user.reset_token_expires = None
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            
+            await self.db.commit()
+            
+            logger.info(f"Password reset successful", email=user.email)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Password reset failed", token=token, error=str(e))
+            return False
+    
+    async def change_password(self, user_id: int, current_password: str, new_password: str) -> bool:
+        """
+        Change user password.
+        
+        Args:
+            user_id: User ID
+            current_password: Current password
+            new_password: New password
+            
+        Returns:
+            True if password was changed successfully
+        """
+        try:
+            # Get user
+            result = await self.db.execute(
+                select(User).where(User.id == user_id, User.is_active == True)
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                return False
+            
+            # Verify current password
+            if not self.verify_password(current_password, user.hashed_password):
+                return False
+            
+            # Update password
+            user.hashed_password = self.get_password_hash(new_password)
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            
+            await self.db.commit()
+            
+            logger.info(f"Password changed successfully", email=user.email)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Password change failed", user_id=user_id, error=str(e))
+            return False
     
     # SSO Authentication Methods
     

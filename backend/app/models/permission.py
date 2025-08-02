@@ -23,13 +23,13 @@ class Permission(Base):
     action = Column(String(50), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     
-    # Relationships
-    roles = relationship(
-        "Role",
-        secondary="role_permissions",
-        back_populates="permissions",
-        lazy="select"
-    )
+    # Relationships - temporarily disabled
+    # roles = relationship(
+    #     "Role",
+    #     secondary="role_permissions",
+    #     back_populates="permissions",
+    #     lazy="select"
+    # )
     
     # Table constraints and indexes
     __table_args__ = (

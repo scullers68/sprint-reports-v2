@@ -34,21 +34,21 @@ class Role(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     
-    # Relationships
-    permissions = relationship(
-        "Permission",
-        secondary=role_permissions,
-        back_populates="roles",
-        lazy="selectin"
-    )
-    users = relationship(
-        "User",
-        secondary=user_roles,
-        primaryjoin="Role.id == user_roles.c.role_id",
-        secondaryjoin="User.id == user_roles.c.user_id",
-        back_populates="roles",
-        lazy="select"
-    )
+    # Relationships - temporarily disabled
+    # permissions = relationship(
+    #     "Permission",
+    #     secondary=role_permissions,
+    #     back_populates="roles",
+    #     lazy="selectin"
+    # )
+    # users = relationship(
+    #     "User",
+    #     secondary=user_roles,
+    #     primaryjoin="Role.id == user_roles.c.role_id",
+    #     secondaryjoin="User.id == user_roles.c.user_id",
+    #     back_populates="roles",
+    #     lazy="select"
+    # )
     
     # Table constraints and indexes
     __table_args__ = (
@@ -69,19 +69,23 @@ class Role(Base):
         """Check if role has a specific permission."""
         if not self.is_active:
             return False
-        return any(
-            perm.name == permission_name and perm.is_active 
-            for perm in self.permissions
-        )
+        # TODO: Re-enable when relationships are fixed
+        # return any(
+        #     perm.name == permission_name and perm.is_active 
+        #     for perm in self.permissions
+        # )
+        return False
     
     def get_permissions(self) -> list[str]:
         """Get list of permission names for this role."""
         if not self.is_active:
             return []
-        return [
-            perm.name for perm in self.permissions 
-            if perm.is_active
-        ]
+        # TODO: Re-enable when relationships are fixed
+        # return [
+        #     perm.name for perm in self.permissions 
+        #     if perm.is_active
+        # ]
+        return []
     
     def __repr__(self) -> str:
         return f"<Role(id={self.id}, name='{self.name}', active={self.is_active})>"
