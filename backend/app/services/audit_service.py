@@ -12,6 +12,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, or_, func, desc
 from sqlalchemy.exc import SQLAlchemyError
+from fastapi import Depends
 
 from app.core.database import get_db
 from app.core.logging import get_logger, LoggerMixin
@@ -542,17 +543,14 @@ class AuditService(LoggerMixin):
         }
 
 
-def get_audit_service(db: AsyncSession = None) -> AuditService:
+async def get_audit_service(db: AsyncSession = Depends(get_db)) -> AuditService:
     """
     Get audit service instance.
     
     Args:
-        db: Optional database session
+        db: Database session from dependency injection
         
     Returns:
         AuditService: Configured audit service
     """
-    if db is None:
-        db = next(get_db())
-    
     return AuditService(db)

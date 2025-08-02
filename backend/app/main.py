@@ -33,7 +33,7 @@ from app.api.v1.router import api_router
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
     # Startup
-    # await create_db_and_tables()  # Temporarily disabled for SSO testing
+    # await create_db_and_tables()  # Database initialization temporarily disabled for testing
     yield
     # Shutdown
     # Add cleanup tasks here if needed

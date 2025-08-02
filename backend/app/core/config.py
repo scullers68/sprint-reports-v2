@@ -18,26 +18,26 @@ class Settings(BaseSettings):
     VERSION: str = "2.0.0"
     API_V1_STR: str = "/api/v1"
     
-    # Security
+    # Core Security (Required)
     SECRET_KEY: str = Field(..., env="SECRET_KEY")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
-    # Data Encryption
-    ENCRYPTION_KEY: str = Field(..., env="ENCRYPTION_KEY")
+    # Data Encryption (Simplified - Optional for development)
+    ENCRYPTION_KEY: str = Field(default="dev-encryption-key-change-in-production", env="ENCRYPTION_KEY")
     ENCRYPTION_ALGORITHM: str = "AES-256-GCM"
     KEY_DERIVATION_ITERATIONS: int = 100000
     
-    # TLS Configuration
-    TLS_ENABLED: bool = Field(True, env="TLS_ENABLED")
+    # TLS Configuration (Optional for development)
+    TLS_ENABLED: bool = Field(False, env="TLS_ENABLED")
     TLS_CERT_PATH: str = Field("/etc/ssl/certs/app.crt", env="TLS_CERT_PATH")
     TLS_KEY_PATH: str = Field("/etc/ssl/private/app.key", env="TLS_KEY_PATH")
     TLS_MIN_VERSION: str = "TLSv1.3"
     
-    # Database Encryption
-    DB_ENCRYPTION_ENABLED: bool = Field(True, env="DB_ENCRYPTION_ENABLED")
-    DB_SSL_MODE: str = Field("require", env="DB_SSL_MODE")
+    # Database Encryption (Optional for development)
+    DB_ENCRYPTION_ENABLED: bool = Field(False, env="DB_ENCRYPTION_ENABLED")
+    DB_SSL_MODE: str = Field("prefer", env="DB_SSL_MODE")
     DB_SSL_CERT_PATH: Optional[str] = Field(None, env="DB_SSL_CERT_PATH")
     DB_SSL_KEY_PATH: Optional[str] = Field(None, env="DB_SSL_KEY_PATH")
     DB_SSL_ROOT_CERT_PATH: Optional[str] = Field(None, env="DB_SSL_ROOT_CERT_PATH")
@@ -75,24 +75,24 @@ class Settings(BaseSettings):
             password=values.get("POSTGRES_PASSWORD"),
             host=values.get("POSTGRES_SERVER"),
             port=values.get("POSTGRES_PORT"),
-            path=f"/{values.get('POSTGRES_DB') or ''}",
+            path=f"{values.get('POSTGRES_DB') or ''}",
         ))
     
     # Redis
     REDIS_URL: str = Field("redis://localhost:6379", env="REDIS_URL")
     
-    # JIRA Integration
-    JIRA_URL: str = Field(..., env="JIRA_URL")
-    JIRA_EMAIL: str = Field(..., env="JIRA_EMAIL") 
-    JIRA_API_TOKEN: str = Field(..., env="JIRA_API_TOKEN")
+    # JIRA Integration (Optional for basic functionality)
+    JIRA_URL: Optional[str] = Field(None, env="JIRA_URL")
+    JIRA_EMAIL: Optional[str] = Field(None, env="JIRA_EMAIL") 
+    JIRA_API_TOKEN: Optional[str] = Field(None, env="JIRA_API_TOKEN")
     
-    # JIRA Webhook Configuration
-    JIRA_WEBHOOK_SECRET: str = Field(..., env="JIRA_WEBHOOK_SECRET")
+    # JIRA Webhook Configuration (Optional)
+    JIRA_WEBHOOK_SECRET: Optional[str] = Field(None, env="JIRA_WEBHOOK_SECRET")
     JIRA_WEBHOOK_USER_AGENT: str = Field("Atlassian HttpClient", env="JIRA_WEBHOOK_USER_AGENT")
     WEBHOOK_MAX_BODY_SIZE: int = Field(10485760, env="WEBHOOK_MAX_BODY_SIZE")  # 10MB max payload
     
-    # Confluence Integration
-    CONFLUENCE_URL: str = Field(..., env="CONFLUENCE_URL")
+    # Confluence Integration (Optional)
+    CONFLUENCE_URL: Optional[str] = Field(None, env="CONFLUENCE_URL")
     
     # Celery (Background Tasks)
     CELERY_BROKER_URL: str = Field("redis://localhost:6379/0", env="CELERY_BROKER_URL")
@@ -106,13 +106,13 @@ class Settings(BaseSettings):
     ENABLE_ML_INSIGHTS: bool = Field(False, env="ENABLE_ML_INSIGHTS")
     ENABLE_AUDIT_LOGGING: bool = Field(True, env="ENABLE_AUDIT_LOGGING")
     
-    # SSO Configuration
+    # SSO Configuration (Completely Optional)
     SSO_ENABLED: bool = Field(False, env="SSO_ENABLED")
     SSO_AUTO_PROVISION_USERS: bool = Field(True, env="SSO_AUTO_PROVISION_USERS")
     SSO_DEFAULT_ROLE: str = Field("user", env="SSO_DEFAULT_ROLE")
     SSO_ALLOWED_DOMAINS: List[str] = Field(default=[], env="SSO_ALLOWED_DOMAINS")
     
-    # Google OAuth 2.0 Configuration
+    # Google OAuth 2.0 Configuration (Optional)
     GOOGLE_CLIENT_ID: Optional[str] = Field(None, env="GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: Optional[str] = Field(None, env="GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI: Optional[str] = Field(None, env="GOOGLE_REDIRECT_URI")

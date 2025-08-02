@@ -69,9 +69,9 @@ start_services() {
         sleep 1
     done
     
-    # Run database migrations
-    print_status "Running database migrations..."
-    docker-compose -f $COMPOSE_FILE -p $PROJECT_NAME exec -T app alembic upgrade head
+    # Run database migrations (temporarily disabled for testing)
+    # print_status "Running database migrations..."
+    # docker-compose -f $COMPOSE_FILE -p $PROJECT_NAME exec -T app alembic upgrade head
     
     print_success "Development environment is ready!"
     echo

@@ -8,6 +8,8 @@ from sqlalchemy import Boolean, Column, String, Text, Integer, ForeignKey, Table
 from sqlalchemy.orm import relationship, validates
 
 from app.models.base import Base
+# Import user_roles table from user module
+from app.models.user import user_roles
 
 
 # Association table for role-permission many-to-many relationship
@@ -41,7 +43,9 @@ class Role(Base):
     )
     users = relationship(
         "User",
-        secondary="user_roles",
+        secondary=user_roles,
+        primaryjoin="Role.id == user_roles.c.role_id",
+        secondaryjoin="User.id == user_roles.c.user_id",
         back_populates="roles",
         lazy="select"
     )

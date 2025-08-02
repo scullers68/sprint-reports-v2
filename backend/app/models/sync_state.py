@@ -16,7 +16,7 @@ from app.models.base import Base
 class SyncState(Base):
     """Track synchronization state and conflicts."""
     
-    __tablename__ = "sync_metadata"
+    __tablename__ = "sync_state"
     
     # Entity identification (mapped to sync_metadata schema)
     entity_type = Column(String(50), nullable=False, index=True)  # sprint, issue, project, board
@@ -54,17 +54,17 @@ class SyncState(Base):
     # Table constraints and indexes (aligned with sync_metadata table)
     __table_args__ = (
         # Ensure valid entity types
-        CheckConstraint("entity_type IN ('sprint', 'issue', 'project', 'board')", name='valid_entity_type'),
+        CheckConstraint("entity_type IN ('sprint', 'issue', 'project', 'board')", name='sync_valid_entity_type'),
         # Ensure valid sync status
-        CheckConstraint("sync_status IN ('pending', 'in_progress', 'completed', 'failed', 'skipped')", name='valid_sync_status'),  
+        CheckConstraint("sync_status IN ('pending', 'in_progress', 'completed', 'failed', 'skipped')", name='sync_valid_sync_status'),  
         # Ensure valid sync directions
-        CheckConstraint("sync_direction IN ('local_to_remote', 'remote_to_local', 'bidirectional')", name='valid_sync_direction'),
+        CheckConstraint("sync_direction IN ('local_to_remote', 'remote_to_local', 'bidirectional')", name='sync_valid_sync_direction'),
         # Ensure valid resolution strategies
-        CheckConstraint("resolution_strategy IS NULL OR resolution_strategy IN ('auto', 'manual', 'jira_wins', 'local_wins')", name='valid_resolution_strategy'),
+        CheckConstraint("resolution_strategy IS NULL OR resolution_strategy IN ('auto', 'manual', 'jira_wins', 'local_wins')", name='sync_valid_resolution_strategy'),
         # Ensure non-negative values
-        CheckConstraint("sync_duration_ms IS NULL OR sync_duration_ms >= 0", name='non_negative_duration'),
-        CheckConstraint("api_calls_count >= 0", name='non_negative_api_calls'),
-        CheckConstraint("error_count >= 0", name='non_negative_error_count'),
+        CheckConstraint("sync_duration_ms IS NULL OR sync_duration_ms >= 0", name='sync_non_negative_duration'),
+        CheckConstraint("api_calls_count >= 0", name='sync_non_negative_api_calls'),
+        CheckConstraint("error_count >= 0", name='sync_non_negative_error_count'),
         # Unique constraint for entity tracking
         Index('idx_unique_entity', 'entity_type', 'entity_id', unique=True),
         # Performance indexes
@@ -72,8 +72,6 @@ class SyncState(Base):
         Index('idx_sync_batch', 'sync_batch_id'),
         Index('idx_sync_timestamps', 'last_sync_attempt', 'sync_status'),
         Index('idx_sync_performance', 'sync_duration_ms', 'api_calls_count'),
-        # Allow extending existing table definition
-        {'extend_existing': True}
     )
     
     @validates('entity_type')

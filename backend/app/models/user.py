@@ -69,6 +69,8 @@ class User(Base):
     roles = relationship(
         "Role",
         secondary=user_roles,
+        primaryjoin="User.id == user_roles.c.user_id",
+        secondaryjoin="Role.id == user_roles.c.role_id",
         back_populates="users",
         lazy="selectin"
     )

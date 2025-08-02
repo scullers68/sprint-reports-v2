@@ -51,8 +51,8 @@ from app.models.base import Base
 async def create_db_and_tables():
     """Create database tables on startup."""
     async with engine.begin() as conn:
-        # Import all models to ensure they're registered
-        from app.models import user, sprint, queue, report, capacity  # noqa
+        # Import essential models only to avoid conflicts during initial setup
+        from app.models import user, role, permission  # noqa
         
         # Create all tables
         await conn.run_sync(Base.metadata.create_all)

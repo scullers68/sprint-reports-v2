@@ -10,8 +10,14 @@ services:
     ports:
       - "3001:8000"  # Different port to avoid conflicts
     environment:
-      - DATABASE_URL=postgresql+asyncpg://sprint_reports:password@db:5432/sprint_reports_v2_local
-      - REDIS_URL=redis://redis:6379/1  # Different Redis database
+      # Required Core Variables
+      - SECRET_KEY=dev-secret-key-change-in-production-minimum-32-chars
+      - POSTGRES_SERVER=db
+      - POSTGRES_USER=sprint_reports
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=sprint_reports_v2_local
+      - REDIS_URL=redis://redis:6379/1
+      # Optional Feature Flags
       - LOG_LEVEL=DEBUG
       - ENABLE_REAL_TIME_UPDATES=true
       - ENABLE_ML_INSIGHTS=false
@@ -51,7 +57,12 @@ services:
   celery:
     build: .
     environment:
-      - DATABASE_URL=postgresql+asyncpg://sprint_reports:password@db:5432/sprint_reports_v2_local
+      # Required Core Variables
+      - SECRET_KEY=dev-secret-key-change-in-production-minimum-32-chars
+      - POSTGRES_SERVER=db
+      - POSTGRES_USER=sprint_reports
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=sprint_reports_v2_local
       - REDIS_URL=redis://redis:6379/1
       - LOG_LEVEL=DEBUG
     depends_on:

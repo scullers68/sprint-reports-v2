@@ -40,8 +40,11 @@ RUN adduser --disabled-password --gecos '' appuser
 # Copy Python dependencies from builder stage
 COPY --from=builder /root/.local /home/appuser/.local
 
-# Copy application code
+# Copy application code and alembic configuration
 COPY ./app /app/app
+COPY alembic.ini /app/
+COPY alembic /app/alembic
+COPY setup_database.py /app/
 
 # Set ownership
 RUN chown -R appuser:appuser /app
