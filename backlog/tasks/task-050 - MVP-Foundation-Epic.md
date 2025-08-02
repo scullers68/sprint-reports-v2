@@ -1,11 +1,14 @@
 ---
 id: task-050
 title: MVP Foundation Epic
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-02'
 updated_date: '2025-08-02'
-labels: ['mvp', 'foundation', 'epic']
+labels:
+  - mvp
+  - foundation
+  - epic
 dependencies: []
 ---
 
