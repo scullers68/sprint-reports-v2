@@ -1,10 +1,10 @@
 ---
 id: task-046
 title: Fix SSO Configuration - Complete Provider Setup
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2025-08-01'
-updated_date: '2025-08-01'
+updated_date: '2025-08-02'
 labels: []
 dependencies: []
 ---
