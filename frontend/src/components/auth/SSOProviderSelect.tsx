@@ -4,7 +4,10 @@
  * Displays available SSO providers and handles authentication initiation.
  */
 
+'use client';
+
 import React, { useEffect, useState } from 'react';
+import { apiClient } from '@/lib/api';
 
 interface SSOProvider {
   type: string;
@@ -42,21 +45,14 @@ export const SSOProviderSelect: React.FC<SSOProviderSelectProps> = ({
 
   const fetchSSOConfig = async () => {
     try {
-      const response = await fetch('/api/v1/auth/sso/config');
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          setError('SSO authentication is not enabled');
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return;
-      }
-
-      const data = await response.json();
+      const data = await apiClient.getSSOConfig();
       setConfig(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load SSO configuration');
+    } catch (err: any) {
+      if (err.status === 404) {
+        setError('SSO authentication is not enabled');
+      } else {
+        setError(err.message || 'Failed to load SSO configuration');
+      }
     } finally {
       setLoading(false);
     }
@@ -158,7 +154,7 @@ export const SSOProviderSelect: React.FC<SSOProviderSelectProps> = ({
       <div className="text-center mb-4">
         <h3 className="text-lg font-medium text-gray-900">Sign in with SSO</h3>
         <p className="text-sm text-gray-600 mt-1">
-          Choose your organization's authentication provider
+          Choose your organization&apos;s authentication provider
         </p>
       </div>
 

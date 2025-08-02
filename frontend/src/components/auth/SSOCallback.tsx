@@ -4,8 +4,10 @@
  * Handles OAuth callbacks from SSO providers and completes authentication flow.
  */
 
+'use client';
+
 import React, { useEffect, useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 interface AuthResponse {
   access_token: string;
@@ -35,13 +37,14 @@ export const SSOCallback: React.FC<SSOCallbackProps> = ({
   onAuthError,
   redirectTo = '/dashboard'
 }) => {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     handleCallback();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCallback = async () => {
@@ -96,7 +99,7 @@ export const SSOCallback: React.FC<SSOCallbackProps> = ({
 
       // Redirect after successful authentication
       setTimeout(() => {
-        navigate(redirectTo);
+        router.push(redirectTo);
       }, 2000);
 
     } catch (err) {
@@ -115,7 +118,7 @@ export const SSOCallback: React.FC<SSOCallbackProps> = ({
 
     // Redirect to login page after error
     setTimeout(() => {
-      navigate('/login');
+      router.push('/login');
     }, 5000);
   };
 
