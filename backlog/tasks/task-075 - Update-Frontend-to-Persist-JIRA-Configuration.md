@@ -1,9 +1,10 @@
 ---
 id: task-075
 title: Update Frontend to Persist JIRA Configuration
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-03'
+updated_date: '2025-08-03'
 labels: []
 dependencies: []
 ---
