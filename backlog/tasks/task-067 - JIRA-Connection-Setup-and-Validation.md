@@ -1,9 +1,10 @@
 ---
 id: task-067
 title: JIRA Connection Setup and Validation
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-03'
+updated_date: '2025-08-03'
 labels: []
 dependencies: []
 ---
