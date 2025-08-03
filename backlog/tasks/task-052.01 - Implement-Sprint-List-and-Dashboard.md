@@ -1,11 +1,17 @@
 ---
 id: task-052.01
 title: Implement Sprint List and Dashboard
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-02'
-labels: ['mvp', 'frontend', 'sprints']
-dependencies: ['task-051.02']
+updated_date: '2025-08-03'
+labels:
+  - mvp
+  - frontend
+  - sprints
+dependencies:
+  - task-051.02
+parent_task_id: task-052
 ---
 
 ## Description
