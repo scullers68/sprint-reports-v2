@@ -1,7 +1,7 @@
 ---
 id: task-068
 title: JIRA Project and Board Discovery
-status: In Progress
+status: Done
 assignee: []
 created_date: '2025-08-03'
 updated_date: '2025-08-03'
