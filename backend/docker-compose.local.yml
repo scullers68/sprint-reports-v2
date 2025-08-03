@@ -37,6 +37,7 @@ services:
       - POSTGRES_DB=sprint_reports_v2_local  # Different database name
     volumes:
       - postgres_data_local:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5433:5432"  # Different port to avoid conflicts
     networks:
