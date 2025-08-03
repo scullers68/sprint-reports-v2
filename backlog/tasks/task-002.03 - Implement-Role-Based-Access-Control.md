@@ -1,10 +1,10 @@
 ---
 id: task-002.03
 title: Implement Role-Based Access Control
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2025-08-01'
-updated_date: '2025-08-01'
+updated_date: '2025-08-03'
 labels: []
 dependencies: []
 parent_task_id: task-002
