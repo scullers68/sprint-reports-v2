@@ -1,9 +1,10 @@
 ---
 id: task-073
 title: Implement JIRA Configuration Service
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-03'
+updated_date: '2025-08-03'
 labels: []
 dependencies: []
 ---
