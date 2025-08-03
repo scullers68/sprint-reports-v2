@@ -1,5 +1,6 @@
 ---
 id: task-053.01
+parent_task_id: task-053
 title: Implement User Registration and Management
 status: To Do
 assignee: []

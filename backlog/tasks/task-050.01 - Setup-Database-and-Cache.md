@@ -1,5 +1,6 @@
 ---
 id: task-050.01
+parent_task_id: task-050
 title: Setup Database and Cache
 status: Done
 assignee:

@@ -1,5 +1,6 @@
 ---
 id: task-050.04
+parent_task_id: task-050
 title: Fix Authentication Endpoint Implementation
 status: Done
 assignee:

@@ -1,5 +1,6 @@
 ---
 id: task-050.06
+parent_task_id: task-050
 title: Epic 051 Readiness Validation
 status: Done
 assignee:

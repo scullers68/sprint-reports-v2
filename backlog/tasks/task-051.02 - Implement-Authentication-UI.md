@@ -1,5 +1,6 @@
 ---
 id: task-051.02
+parent_task_id: task-051
 title: Implement Authentication UI
 status: In Progress
 assignee: []

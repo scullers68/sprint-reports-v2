@@ -1,5 +1,6 @@
 ---
 id: task-050.05
+parent_task_id: task-050
 title: Integration Testing and RBAC Validation
 status: Done
 assignee:

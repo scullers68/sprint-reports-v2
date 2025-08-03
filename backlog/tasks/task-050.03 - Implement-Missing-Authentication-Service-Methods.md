@@ -1,5 +1,6 @@
 ---
 id: task-050.03
+parent_task_id: task-050
 title: Implement Missing Authentication Service Methods
 status: To Do
 assignee:

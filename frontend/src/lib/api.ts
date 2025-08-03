@@ -14,7 +14,7 @@ import {
 } from '@/types/api';
 
 // API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const API_VERSION = 'v1';
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 const MAX_RETRIES = 3;
@@ -88,7 +88,15 @@ class TokenManager {
 
   getAuthHeader(): string | null {
     const token = this.getToken();
-    return token ? `${this.tokenType} ${token}` : null;
+    const authHeader = token ? `${this.tokenType} ${token}` : null;
+    console.log('Getting auth header - token exists:', !!token, 'tokenType:', this.tokenType);
+    if (token) {
+      // Check if token is expired
+      console.log('Token expired:', this.isTokenExpired());
+      console.log('Token expires at:', this.expiresAt ? new Date(this.expiresAt).toISOString() : 'not set');
+      console.log('Current time:', new Date().toISOString());
+    }
+    return authHeader;
   }
 
   isTokenExpired(): boolean {
@@ -147,6 +155,8 @@ class ApiClient {
     const authHeader = this.tokenManager.getAuthHeader();
     if (authHeader) {
       defaultHeaders.Authorization = authHeader;
+    } else {
+      console.warn('No auth header available for request to:', endpoint);
     }
 
     const finalHeaders = { ...defaultHeaders, ...headers };
@@ -271,10 +281,10 @@ class ApiClient {
       user: response.user
     };
     
-    // Store token
+    // Store token (ensure Bearer is capitalized per HTTP standard)
     this.tokenManager.setToken(
       authResponse.access_token,
-      authResponse.token_type,
+      authResponse.token_type.charAt(0).toUpperCase() + authResponse.token_type.slice(1),
       authResponse.expires_in
     );
     
@@ -335,6 +345,33 @@ class ApiClient {
   // Sprint Methods
   async getSprintsToProcess(params?: PaginationParams & FilterParams): Promise<ApiResponse<Sprint[]>> {
     return this.get<ApiResponse<Sprint[]>>('/sprints/', params);
+  }
+
+  async getSprints(params?: {
+    skip?: number;
+    limit?: number;
+    state?: string;
+    active_only?: boolean;
+    search?: string;
+  }): Promise<Sprint[]> {
+    return this.get<Sprint[]>('/sprints/', params);
+  }
+
+  async getSprintStats(): Promise<{
+    active_sprints: number;
+    total_issues: number;
+    team_members: number;
+  }> {
+    // This will call existing endpoints to get aggregate stats
+    const [sprints] = await Promise.all([
+      this.getSprints({ active_only: true })
+    ]);
+    
+    return {
+      active_sprints: sprints.length,
+      total_issues: sprints.reduce((sum, sprint) => sum + (sprint.id || 0), 0), // Placeholder logic
+      team_members: 15 // Placeholder - could be from another endpoint
+    };
   }
 
   async getSprint(id: number): Promise<Sprint> {

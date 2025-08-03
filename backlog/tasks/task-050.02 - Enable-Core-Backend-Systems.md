@@ -1,5 +1,6 @@
 ---
 id: task-050.02
+parent_task_id: task-050
 title: Enable Core Backend Systems
 status: Done
 assignee: []
