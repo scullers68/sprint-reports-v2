@@ -1,17 +1,17 @@
 ---
 id: task-051.02
-parent_task_id: task-051
 title: Implement Authentication UI
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2025-08-02'
-updated_date: '2025-08-02'
+updated_date: '2025-08-03'
 labels:
   - mvp
   - frontend
   - authentication
 dependencies:
   - task-051.01
+parent_task_id: task-051
 ---
 
 ## Description
