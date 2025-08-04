@@ -1,7 +1,7 @@
 ---
 id: task-082
 title: Team Capacity Analysis for Multi-Project Context
-status: To Do
+status: In Progress
 assignee:
   - >-
     [ ] Extend existing capacity service to support project-based capacity
@@ -15,6 +15,7 @@ assignee:
     Ensure backward compatibility with existing single-project capacity
     management features
 created_date: '2025-08-04'
+updated_date: '2025-08-04'
 labels: []
 dependencies: []
 ---
