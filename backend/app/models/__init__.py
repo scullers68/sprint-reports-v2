@@ -8,6 +8,7 @@ from app.models.base import Base
 from app.models.user import User
 from app.models.role import Role
 from app.models.permission import Permission
+from app.models.jira_configuration import JiraConfiguration
 # Temporarily commenting out problematic models for MVP setup
 # from app.models.sprint import Sprint, SprintAnalysis
 # from app.models.queue import SprintQueue, QueueItem
@@ -22,5 +23,6 @@ __all__ = [
     "Base",
     "User",
     "Role",
-    "Permission"
+    "Permission",
+    "JiraConfiguration"
 ]

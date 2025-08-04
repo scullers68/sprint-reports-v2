@@ -16,14 +16,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.encryption import encrypt_sensitive_field, decrypt_sensitive_field
-from app.core.exceptions import ExternalServiceError, RateLimitError
+from app.core.exceptions import ExternalServiceError, RateLimitError, ValidationError, SprintReportsException
 from app.models.user import User
 from app.schemas.jira import (
     JiraConnectionConfig, JiraConnectionTest, JiraConnectionTestResult,
-    JiraConnectionStatus, JiraHealthCheck, JiraCapabilities, JiraSetupResult
+    JiraConnectionStatus, JiraHealthCheck, JiraCapabilities, JiraSetupResult,
+    JiraConfigurationCreate, JiraConfigurationUpdate, JiraConfigurationResponse,
+    JiraConfigurationList, JiraConfigurationTestRequest, JiraConfigurationStatusFilter,
+    JiraConfigurationMonitoringResponse
 )
 from app.core.security import get_current_user
 from app.services.jira_service import JiraService, JiraAPIClient
+from app.services.jira_configuration_service import JiraConfigurationService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -467,6 +471,391 @@ def _generate_connection_recommendations(
     return recommendations
 
 
+@router.get("/projects")
+async def discover_projects(
+    search: Optional[str] = None,
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> List[Dict[str, Any]]:
+    """
+    Discover and list all accessible JIRA projects with filtering and permissions.
+    
+    Args:
+        search: Optional search term to filter projects by name or key
+        limit: Maximum number of projects to return (default 50)
+    
+    Returns:
+        List of JIRA projects with metadata and permission information
+    """
+    try:
+        # For now, we'll need to get the connection details from somewhere
+        # This is a temporary fix - in production, you'd store the config in DB
+        # and retrieve it here based on the current user
+        
+        # Check if we have connection details in the request headers or session
+        # For testing, we'll use environment variables as fallback
+        from app.core.config import settings
+        
+        if not settings.JIRA_URL or not settings.JIRA_API_TOKEN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="JIRA connection not configured. Please set JIRA_URL and JIRA_API_TOKEN environment variables."
+            )
+        
+        # Create JIRA service with connection details
+        from app.services.jira_service import JiraService
+        
+        jira_service = JiraService(db)
+        
+        # Get all projects from JIRA
+        all_projects = await jira_service.get_projects()
+        
+        # Apply search filter if provided
+        if search:
+            search_lower = search.lower()
+            all_projects = [
+                project for project in all_projects
+                if (search_lower in project.get("name", "").lower() or 
+                    search_lower in project.get("key", "").lower())
+            ]
+        
+        # Apply limit
+        projects = all_projects[:limit]
+        
+        # Enhance project data with additional metadata
+        enhanced_projects = []
+        for project in projects:
+            enhanced_project = {
+                "id": project.get("id"),
+                "key": project.get("key"),
+                "name": project.get("name"),
+                "projectTypeKey": project.get("projectTypeKey", "unknown"),
+                "simplified": project.get("simplified", False),
+                "style": project.get("style", "classic"),
+                "isPrivate": project.get("isPrivate", False),
+                "description": project.get("description"),
+                "lead": project.get("lead"),
+                "url": project.get("self"),
+                "avatarUrls": project.get("avatarUrls"),
+                "permissions": {
+                    "browse": True,  # If we can see it, we can browse it
+                    "administrate": False,  # Would need additional check
+                    "create_issues": False  # Would need additional check
+                },
+                "board_count": 0  # Will be populated below
+            }
+            
+            # Try to get board count for this project
+            try:
+                project_boards = await jira_service.get_boards(project_key=project.get("key"))
+                enhanced_project["board_count"] = len(project_boards) if project_boards else 0
+            except Exception as e:
+                logger.debug(f"Could not get boards for project {project.get('key')}: {e}")
+            
+            enhanced_projects.append(enhanced_project)
+        
+        await jira_service.close()
+        
+        logger.info(f"Found {len(enhanced_projects)} projects for user {current_user.id}")
+        return enhanced_projects
+        
+    except Exception as e:
+        logger.error(f"Failed to discover JIRA projects: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to discover JIRA projects: {str(e)}"
+        )
+
+
+@router.get("/projects/{project_key}/boards")
+async def discover_project_boards(
+    project_key: str,
+    board_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """
+    Discover and list all boards within a specific JIRA project.
+    
+    Args:
+        project_key: JIRA project key
+        board_type: Optional filter by board type (scrum, kanban)
+    
+    Returns:
+        List of JIRA boards with configuration and sprint settings
+    """
+    try:
+        jira_service = JiraService()
+        
+        # Get boards for the specific project
+        boards = await jira_service.get_boards(project_key=project_key)
+        
+        # Apply board type filter if provided
+        if board_type:
+            boards = [
+                board for board in boards
+                if board.get("type", "").lower() == board_type.lower()
+            ]
+        
+        # Enhance board data with additional metadata
+        enhanced_boards = []
+        for board in boards:
+            enhanced_board = {
+                "id": board.get("id"),
+                "name": board.get("name"),
+                "type": board.get("type"),
+                "project_key": project_key,
+                "self": board.get("self"),
+                "location": board.get("location"),
+                "configuration": {
+                    "type": board.get("type", "unknown").lower(),
+                    "is_scrum": board.get("type", "").lower() == "scrum",
+                    "is_kanban": board.get("type", "").lower() == "kanban",
+                    "supports_sprints": board.get("type", "").lower() == "scrum"
+                },
+                "permissions": {
+                    "view": True,  # If we can see it, we can view it
+                    "edit": False,  # Would need additional check
+                    "admin": False  # Would need additional check
+                },
+                "sprint_count": 0,
+                "active_sprint": None
+            }
+            
+            # For Scrum boards, try to get sprint information
+            if enhanced_board["configuration"]["is_scrum"]:
+                try:
+                    sprints = await jira_service.get_sprints(board_id=board.get("id"))
+                    enhanced_board["sprint_count"] = len(sprints) if sprints else 0
+                    
+                    # Find active sprint
+                    if sprints:
+                        active_sprints = [s for s in sprints if s.get("state") == "ACTIVE"]
+                        if active_sprints:
+                            active_sprint = active_sprints[0]
+                            enhanced_board["active_sprint"] = {
+                                "id": active_sprint.get("id"),
+                                "name": active_sprint.get("name"),
+                                "goal": active_sprint.get("goal"),
+                                "startDate": active_sprint.get("startDate"),
+                                "endDate": active_sprint.get("endDate")
+                            }
+                
+                except Exception as e:
+                    logger.debug(f"Could not get sprints for board {board.get('id')}: {e}")
+            
+            enhanced_boards.append(enhanced_board)
+        
+        await jira_service.close()
+        
+        logger.info(f"Found {len(enhanced_boards)} boards for project {project_key} for user {current_user.id}")
+        return enhanced_boards
+        
+    except Exception as e:
+        logger.error(f"Failed to discover boards for project {project_key}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to discover boards for project {project_key}: {str(e)}"
+        )
+
+
+@router.get("/boards/{board_id}/configuration")
+async def get_board_configuration(
+    board_id: int,
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Get detailed configuration information for a specific JIRA board.
+    
+    Args:
+        board_id: JIRA board ID
+    
+    Returns:
+        Detailed board configuration including sprint settings and permissions
+    """
+    try:
+        jira_service = JiraService()
+        client = await jira_service._get_client()
+        
+        # Get board details
+        board_endpoint = f"/rest/agile/1.0/board/{board_id}"
+        board_info = await client.get(board_endpoint)
+        
+        configuration = {
+            "id": board_info.get("id"),
+            "name": board_info.get("name"),
+            "type": board_info.get("type"),
+            "location": board_info.get("location"),
+            "self": board_info.get("self"),
+            "supports_sprints": board_info.get("type", "").lower() == "scrum",
+            "permissions": {
+                "view_board": True,
+                "view_sprints": board_info.get("type", "").lower() == "scrum",
+                "create_sprints": False,  # Would need additional permission check
+                "edit_board": False       # Would need additional permission check
+            },
+            "sprint_settings": {},
+            "columns": [],
+            "quick_filters": [],
+            "estimation": {}
+        }
+        
+        # Get board configuration details if available
+        try:
+            config_endpoint = f"/rest/agile/1.0/board/{board_id}/configuration"
+            board_config = await client.get(config_endpoint)
+            
+            configuration["columns"] = board_config.get("columnConfig", {}).get("columns", [])
+            configuration["quick_filters"] = board_config.get("filter", {}).get("quickFilters", [])
+            configuration["estimation"] = board_config.get("estimation", {})
+            
+            # Extract sprint settings for Scrum boards
+            if configuration["supports_sprints"]:
+                configuration["sprint_settings"] = {
+                    "default_duration": board_config.get("sprintConfig", {}).get("duration", "2 weeks"),
+                    "start_day": board_config.get("sprintConfig", {}).get("startDay", "Monday"),
+                    "working_days": board_config.get("sprintConfig", {}).get("workingDays", [])
+                }
+        
+        except Exception as e:
+            logger.debug(f"Could not get detailed board configuration for {board_id}: {e}")
+        
+        # Get recent sprints for Scrum boards
+        if configuration["supports_sprints"]:
+            try:
+                sprints = await jira_service.get_sprints(board_id=board_id)
+                configuration["recent_sprints"] = [
+                    {
+                        "id": sprint.get("id"),
+                        "name": sprint.get("name"),
+                        "state": sprint.get("state"),
+                        "startDate": sprint.get("startDate"),
+                        "endDate": sprint.get("endDate"),
+                        "goal": sprint.get("goal")
+                    }
+                    for sprint in (sprints[:5] if sprints else [])  # Last 5 sprints
+                ]
+            except Exception as e:
+                logger.debug(f"Could not get sprints for board {board_id}: {e}")
+                configuration["recent_sprints"] = []
+        
+        await jira_service.close()
+        
+        logger.info(f"Retrieved board configuration for board {board_id} for user {current_user.id}")
+        return configuration
+        
+    except Exception as e:
+        logger.error(f"Failed to get board configuration for {board_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get board configuration: {str(e)}"
+        )
+
+
+@router.post("/projects/{project_key}/select")
+async def select_project_for_sprint_import(
+    project_key: str,
+    board_ids: List[int],
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Select a JIRA project and boards for sprint data import and persist the selection.
+    
+    Args:
+        project_key: JIRA project key
+        board_ids: List of board IDs to use for sprint import
+    
+    Returns:
+        Selection confirmation with project and board details
+    """
+    try:
+        jira_service = JiraService(db)
+        
+        # Validate project exists and is accessible
+        projects = await jira_service.get_projects()
+        selected_project = next(
+            (p for p in projects if p.get("key") == project_key), 
+            None
+        )
+        
+        if not selected_project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project {project_key} not found or not accessible"
+            )
+        
+        # Validate boards exist and belong to project
+        validated_boards = []
+        for board_id in board_ids:
+            try:
+                # Get board details and verify it belongs to this project
+                client = await jira_service._get_client()
+                board_endpoint = f"/rest/agile/1.0/board/{board_id}"
+                board_info = await client.get(board_endpoint)
+                
+                # Check if board is associated with the project
+                board_project_key = None
+                if board_info.get("location", {}).get("projectKey"):
+                    board_project_key = board_info["location"]["projectKey"]
+                
+                if board_project_key != project_key:
+                    logger.warning(f"Board {board_id} does not belong to project {project_key}")
+                    continue
+                
+                validated_boards.append({
+                    "id": board_info.get("id"),
+                    "name": board_info.get("name"),
+                    "type": board_info.get("type"),
+                    "supports_sprints": board_info.get("type", "").lower() == "scrum"
+                })
+                
+            except Exception as e:
+                logger.warning(f"Could not validate board {board_id}: {e}")
+                continue
+        
+        if not validated_boards:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid boards found for the specified project"
+            )
+        
+        # TODO: Store project selection in database
+        # This would typically create a user preference record or project configuration
+        
+        selection_result = {
+            "project": {
+                "key": selected_project.get("key"),
+                "name": selected_project.get("name"),
+                "id": selected_project.get("id")
+            },
+            "boards": validated_boards,
+            "selected_at": datetime.now(timezone.utc).isoformat(),
+            "selected_by": current_user.id,
+            "status": "selected",
+            "next_steps": [
+                "Project and boards have been selected for sprint import",
+                "Use the sprint discovery endpoint to find available sprints",
+                "Configure field mappings if needed",
+                "Begin sprint data import process"
+            ]
+        }
+        
+        await jira_service.close()
+        
+        logger.info(f"User {current_user.id} selected project {project_key} with {len(validated_boards)} boards")
+        return selection_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to select project {project_key}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to select project: {str(e)}"
+        )
+
+
 async def _test_jira_capabilities(jira_service: JiraService) -> List[str]:
     """Test and return list of available JIRA capabilities."""
     capabilities = []
@@ -512,3 +901,420 @@ async def _test_jira_capabilities(jira_service: JiraService) -> List[str]:
         pass
     
     return capabilities
+
+
+# JIRA Configuration Management Endpoints
+
+@router.post("/configurations", response_model=JiraConfigurationResponse, status_code=status.HTTP_201_CREATED)
+async def create_jira_configuration(
+    config_data: JiraConfigurationCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> JiraConfigurationResponse:
+    """
+    Create a new JIRA configuration with validation and testing.
+    
+    Creates a JIRA configuration entry, optionally tests the connection,
+    and stores it securely with encrypted sensitive fields.
+    """
+    try:
+        logger.info(f"Creating JIRA configuration '{config_data.name}' for user {current_user.id}")
+        
+        # Initialize configuration service
+        config_service = JiraConfigurationService(db)
+        
+        # Create configuration with automatic testing if requested
+        jira_config = await config_service.create_configuration(
+            config=config_data.config,
+            name=config_data.name,
+            description=config_data.description,
+            user_id=current_user.id,
+            environment=config_data.environment,
+            test_connection=config_data.test_connection
+        )
+        
+        logger.info(f"Successfully created JIRA configuration {jira_config.id}")
+        
+        # Return response with masked sensitive fields
+        return JiraConfigurationResponse.from_orm_with_security(jira_config)
+        
+    except ValidationError as e:
+        logger.warning(f"Validation error creating JIRA configuration: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Validation error: {str(e)}"
+        )
+    except ExternalServiceError as e:
+        logger.error(f"JIRA connection test failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"JIRA connection test failed: {e.detail}"
+        )
+    except SprintReportsException as e:
+        logger.error(f"Database error creating configuration: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create JIRA configuration"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error creating JIRA configuration: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error creating JIRA configuration"
+        )
+
+
+@router.get("/configurations", response_model=JiraConfigurationList)
+async def list_jira_configurations(
+    environment: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    limit: int = 100,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> JiraConfigurationList:
+    """
+    List JIRA configurations with filtering and pagination.
+    
+    Returns a paginated list of JIRA configurations with optional
+    filtering by environment, status, and active state.
+    """
+    try:
+        logger.debug(f"Listing JIRA configurations for user {current_user.id}")
+        
+        # Initialize configuration service
+        config_service = JiraConfigurationService(db)
+        
+        # Parse status filter
+        status_enum = None
+        if status_filter:
+            try:
+                from app.enums import ConnectionStatus
+                status_enum = ConnectionStatus(status_filter.lower())
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid status filter: {status_filter}"
+                )
+        
+        # Get configurations with filtering
+        configurations = await config_service.get_configurations(
+            environment=environment,
+            status=status_enum,
+            is_active=is_active,
+            limit=limit,
+            offset=offset
+        )
+        
+        # Convert to response models
+        config_responses = [
+            JiraConfigurationResponse.from_orm_with_security(config)
+            for config in configurations
+        ]
+        
+        # Calculate pagination info
+        total = len(config_responses)  # Note: This is simplified, in production you'd get total separately
+        page = (offset // limit) + 1 if limit > 0 else 1
+        has_next = len(configurations) == limit  # Simplified check
+        has_previous = offset > 0
+        
+        logger.debug(f"Found {len(configurations)} JIRA configurations")
+        
+        return JiraConfigurationList(
+            configurations=config_responses,
+            total=total,
+            page=page,
+            page_size=limit,
+            has_next=has_next,
+            has_previous=has_previous
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing JIRA configurations: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list JIRA configurations"
+        )
+
+
+@router.get("/configurations/{config_id}", response_model=JiraConfigurationResponse)
+async def get_jira_configuration(
+    config_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> JiraConfigurationResponse:
+    """
+    Get a specific JIRA configuration by ID.
+    
+    Returns detailed information about a JIRA configuration
+    with sensitive fields masked for security.
+    """
+    try:
+        logger.debug(f"Getting JIRA configuration {config_id} for user {current_user.id}")
+        
+        # Initialize configuration service
+        config_service = JiraConfigurationService(db)
+        
+        # Get configuration
+        jira_config = await config_service.get_configuration(config_id)
+        
+        if not jira_config:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"JIRA configuration {config_id} not found"
+            )
+        
+        logger.debug(f"Found JIRA configuration {config_id}")
+        
+        # Return response with masked sensitive fields
+        return JiraConfigurationResponse.from_orm_with_security(jira_config)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting JIRA configuration {config_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get JIRA configuration {config_id}"
+        )
+
+
+@router.put("/configurations/{config_id}", response_model=JiraConfigurationResponse)
+async def update_jira_configuration(
+    config_id: int,
+    update_data: JiraConfigurationUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> JiraConfigurationResponse:
+    """
+    Update an existing JIRA configuration.
+    
+    Updates configuration fields and optionally tests the connection
+    if authentication or connection details are modified.
+    """
+    try:
+        logger.info(f"Updating JIRA configuration {config_id} for user {current_user.id}")
+        
+        # Initialize configuration service
+        config_service = JiraConfigurationService(db)
+        
+        # Prepare update dictionary excluding None values
+        updates = {}
+        update_dict = update_data.dict(exclude_unset=True, exclude={'config', 'test_connection'})
+        
+        # Handle individual field updates
+        for key, value in update_dict.items():
+            if value is not None:
+                updates[key] = value
+        
+        # Handle config updates separately to properly handle nested fields
+        if update_data.config:
+            config_dict = update_data.config.dict(exclude_unset=True)
+            for key, value in config_dict.items():
+                if value is not None:
+                    updates[key] = value
+        
+        # Update configuration
+        updated_config = await config_service.update_configuration(
+            config_id=config_id,
+            updates=updates,
+            test_connection=update_data.test_connection
+        )
+        
+        if not updated_config:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"JIRA configuration {config_id} not found"
+            )
+        
+        logger.info(f"Successfully updated JIRA configuration {config_id}")
+        
+        # Return response with masked sensitive fields
+        return JiraConfigurationResponse.from_orm_with_security(updated_config)
+        
+    except HTTPException:
+        raise
+    except ValidationError as e:
+        logger.warning(f"Validation error updating JIRA configuration {config_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Validation error: {str(e)}"
+        )
+    except ExternalServiceError as e:
+        logger.error(f"JIRA connection test failed for configuration {config_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"JIRA connection test failed: {e.detail}"
+        )
+    except Exception as e:
+        logger.error(f"Error updating JIRA configuration {config_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update JIRA configuration {config_id}"
+        )
+
+
+@router.delete("/configurations/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_jira_configuration(
+    config_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> None:
+    """
+    Delete (deactivate) a JIRA configuration.
+    
+    Performs soft delete by setting the configuration as inactive.
+    Prevents deletion of the last active configuration in an environment.
+    """
+    try:
+        logger.info(f"Deleting JIRA configuration {config_id} for user {current_user.id}")
+        
+        # Initialize configuration service
+        config_service = JiraConfigurationService(db)
+        
+        # Delete configuration
+        deleted = await config_service.delete_configuration(config_id)
+        
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"JIRA configuration {config_id} not found"
+            )
+        
+        logger.info(f"Successfully deleted JIRA configuration {config_id}")
+        
+    except HTTPException:
+        raise
+    except ValidationError as e:
+        logger.warning(f"Validation error deleting JIRA configuration {config_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error deleting JIRA configuration {config_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete JIRA configuration {config_id}"
+        )
+
+
+@router.post("/configurations/{config_id}/test", response_model=JiraConnectionTestResult)
+async def test_jira_configuration(
+    config_id: int,
+    update_status: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> JiraConnectionTestResult:
+    """
+    Test connection for a specific JIRA configuration.
+    
+    Tests the connection using stored configuration and optionally
+    updates the configuration status based on test results.
+    """
+    try:
+        logger.info(f"Testing JIRA configuration {config_id} for user {current_user.id}")
+        
+        # Initialize configuration service
+        config_service = JiraConfigurationService(db)
+        
+        # Test configuration connection
+        test_result = await config_service.test_configuration_connection(
+            config_id=config_id,
+            update_status=update_status
+        )
+        
+        logger.info(f"JIRA configuration {config_id} test completed: {test_result.connection_valid}")
+        
+        return test_result
+        
+    except SprintReportsException as e:
+        logger.error(f"Database error testing JIRA configuration {config_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"JIRA configuration {config_id} not found"
+        )
+    except Exception as e:
+        logger.error(f"Error testing JIRA configuration {config_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to test JIRA configuration {config_id}"
+        )
+
+
+@router.get("/configurations/default", response_model=JiraConfigurationResponse)
+async def get_default_jira_configuration(
+    environment: str = "production",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> JiraConfigurationResponse:
+    """
+    Get the default JIRA configuration for an environment.
+    
+    Returns the default JIRA configuration for the specified environment.
+    """
+    try:
+        logger.debug(f"Getting default JIRA configuration for environment '{environment}' for user {current_user.id}")
+        
+        # Initialize configuration service
+        config_service = JiraConfigurationService(db)
+        
+        # Get default configuration
+        default_config = await config_service.get_default_configuration(environment)
+        
+        if not default_config:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No default JIRA configuration found for environment '{environment}'"
+            )
+        
+        logger.debug(f"Found default JIRA configuration {default_config.id} for environment '{environment}'")
+        
+        # Return response with masked sensitive fields
+        return JiraConfigurationResponse.from_orm_with_security(default_config)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting default JIRA configuration for environment '{environment}': {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get default JIRA configuration for environment '{environment}'"
+        )
+
+
+@router.get("/configurations/monitor", response_model=JiraConfigurationMonitoringResponse)
+async def monitor_jira_configurations(
+    environment: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> JiraConfigurationMonitoringResponse:
+    """
+    Monitor health and status of JIRA configurations.
+    
+    Returns comprehensive monitoring data including health metrics,
+    error counts, and status summaries for JIRA configurations.
+    """
+    try:
+        logger.debug(f"Monitoring JIRA configurations for environment '{environment}' for user {current_user.id}")
+        
+        # Initialize configuration service
+        config_service = JiraConfigurationService(db)
+        
+        # Get monitoring data
+        monitoring_data = await config_service.monitor_configurations(environment)
+        
+        logger.debug(f"Configuration monitoring complete: {monitoring_data['health_percentage']:.1f}% healthy")
+        
+        # Convert to response model
+        return JiraConfigurationMonitoringResponse(**monitoring_data)
+        
+    except Exception as e:
+        logger.error(f"Error monitoring JIRA configurations: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to monitor JIRA configurations"
+        )

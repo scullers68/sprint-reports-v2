@@ -7,22 +7,9 @@ configuration, and validation endpoints.
 
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from enum import Enum
 from pydantic import BaseModel, Field, validator
 
-
-class JiraInstanceType(str, Enum):
-    """JIRA instance type enumeration."""
-    CLOUD = "cloud"
-    SERVER = "server"
-    DATA_CENTER = "datacenter"
-
-
-class JiraAuthMethod(str, Enum):
-    """JIRA authentication method enumeration."""
-    TOKEN = "token"
-    BASIC = "basic"
-    OAUTH = "oauth"
+from app.enums import JiraInstanceType, JiraAuthMethod
 
 
 class JiraConnectionConfigBase(BaseModel):
@@ -277,3 +264,160 @@ class JiraConnectionDashboard(BaseModel):
     monitoring: JiraConnectionMonitoring
     recent_alerts: List[JiraConnectionAlert]
     capabilities: JiraCapabilities
+
+
+# JIRA Configuration Management Schemas
+
+class JiraConfigurationCreate(BaseModel):
+    """Schema for creating a new JIRA configuration."""
+    name: str = Field(..., min_length=1, max_length=200, description="Configuration name")
+    description: Optional[str] = Field(None, max_length=1000, description="Optional description")
+    config: JiraConnectionConfig = Field(..., description="JIRA connection configuration")
+    environment: str = Field("production", description="Environment (dev, staging, production)")
+    is_default: bool = Field(False, description="Set as default configuration for environment")
+    test_connection: bool = Field(True, description="Test connection before saving")
+    tags: Optional[List[str]] = Field(None, description="Optional tags for organization")
+
+    @validator('name')
+    def validate_name(cls, v):
+        """Validate configuration name."""
+        if not v.strip():
+            raise ValueError('Name cannot be empty')
+        return v.strip()
+
+    @validator('environment')
+    def validate_environment(cls, v):
+        """Validate environment value."""
+        valid_environments = ['dev', 'development', 'staging', 'uat', 'production', 'prod']
+        if v.lower() not in valid_environments:
+            raise ValueError(f'Environment must be one of: {", ".join(valid_environments)}')
+        return v.lower()
+
+
+class JiraConfigurationUpdate(BaseModel):
+    """Schema for updating an existing JIRA configuration."""
+    name: Optional[str] = Field(None, min_length=1, max_length=200, description="Configuration name")
+    description: Optional[str] = Field(None, max_length=1000, description="Configuration description")
+    config: Optional[JiraConnectionConfig] = Field(None, description="JIRA connection configuration")
+    is_active: Optional[bool] = Field(None, description="Configuration active status")
+    is_default: Optional[bool] = Field(None, description="Set as default configuration")
+    test_connection: bool = Field(True, description="Test connection if config updated")
+    tags: Optional[List[str]] = Field(None, description="Tags for organization")
+
+    @validator('name')
+    def validate_name(cls, v):
+        """Validate configuration name."""
+        if v is not None and not v.strip():
+            raise ValueError('Name cannot be empty')
+        return v.strip() if v else v
+
+
+class JiraConfigurationResponse(BaseModel):
+    """Schema for JIRA configuration response."""
+    id: int
+    name: str
+    description: Optional[str]
+    url: str
+    instance_type: str
+    auth_method: str
+    email: Optional[str]
+    username: Optional[str]
+    # Sensitive fields are masked
+    has_api_token: bool = Field(False, description="Whether API token is configured")
+    has_password: bool = Field(False, description="Whether password is configured")
+    has_oauth_config: bool = Field(False, description="Whether OAuth config is configured")
+    custom_fields: Optional[Dict[str, Any]]
+    api_version: Optional[str]
+    server_info: Optional[Dict[str, Any]]
+    capabilities: Optional[Dict[str, Any]]
+    status: str
+    is_active: bool
+    is_default: bool
+    last_tested_at: Optional[datetime]
+    last_successful_test: Optional[datetime]
+    last_error_at: Optional[datetime]
+    last_error_message: Optional[str]
+    error_count: int
+    consecutive_errors: int
+    avg_response_time_ms: Optional[int]
+    success_rate_percent: Optional[int]
+    environment: str
+    tags: Optional[List[str]]
+    created_at: datetime
+    updated_at: datetime
+    created_by_user_id: Optional[int]
+
+    @classmethod
+    def from_orm_with_security(cls, config):
+        """Create response from ORM object with security considerations."""
+        return cls(
+            id=config.id,
+            name=config.name,
+            description=config.description,
+            url=config.url,
+            instance_type=config.instance_type.value,
+            auth_method=config.auth_method.value,
+            email=config.email,
+            username=config.username,
+            has_api_token=bool(config._api_token),
+            has_password=bool(config._password),
+            has_oauth_config=bool(config._oauth_config),
+            custom_fields=config.custom_fields,
+            api_version=config.api_version,
+            server_info=config.server_info,
+            capabilities=config.capabilities,
+            status=config.status.value,
+            is_active=config.is_active,
+            is_default=config.is_default,
+            last_tested_at=config.last_tested_at,
+            last_successful_test=config.last_successful_test,
+            last_error_at=config.last_error_at,
+            last_error_message=config.last_error_message,
+            error_count=config.error_count,
+            consecutive_errors=config.consecutive_errors,
+            avg_response_time_ms=config.avg_response_time_ms,
+            success_rate_percent=config.success_rate_percent,
+            environment=config.environment,
+            tags=config.tags,
+            created_at=config.created_at,
+            updated_at=config.updated_at,
+            created_by_user_id=config.created_by_user_id
+        )
+
+
+class JiraConfigurationList(BaseModel):
+    """Schema for listing JIRA configurations."""
+    configurations: List[JiraConfigurationResponse]
+    total: int
+    page: int = 1
+    page_size: int = 100
+    has_next: bool = False
+    has_previous: bool = False
+
+
+class JiraConfigurationTestRequest(BaseModel):
+    """Schema for testing a specific configuration."""
+    config_id: int = Field(..., description="Configuration ID to test")
+    update_status: bool = Field(True, description="Update configuration status based on test result")
+
+
+class JiraConfigurationStatusFilter(BaseModel):
+    """Schema for filtering configurations by status."""
+    environment: Optional[str] = Field(None, description="Filter by environment")
+    status: Optional[str] = Field(None, description="Filter by connection status")
+    is_active: Optional[bool] = Field(None, description="Filter by active status")
+    is_default: Optional[bool] = Field(None, description="Filter by default status")
+    limit: int = Field(100, ge=1, le=1000, description="Maximum results to return")
+    offset: int = Field(0, ge=0, description="Number of results to skip")
+
+
+class JiraConfigurationMonitoringResponse(BaseModel):
+    """Schema for configuration monitoring response."""
+    total_configurations: int
+    healthy_count: int
+    error_count: int
+    inactive_count: int
+    health_percentage: float
+    environment: Optional[str]
+    timestamp: datetime
+    configurations: List[Dict[str, Any]]

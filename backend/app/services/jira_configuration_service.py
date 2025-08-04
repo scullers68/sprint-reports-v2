@@ -14,14 +14,10 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.core.exceptions import ExternalServiceError, ValidationError, DatabaseError
+from app.core.exceptions import ExternalServiceError, ValidationError, SprintReportsException
 from app.core.logging import get_logger
-from app.models.jira_configuration import (
-    JiraConfiguration, 
-    JiraInstanceType, 
-    JiraAuthMethod, 
-    ConnectionStatus
-)
+from app.models.jira_configuration import JiraConfiguration
+from app.enums import JiraInstanceType, JiraAuthMethod, ConnectionStatus
 from app.schemas.jira import (
     JiraConnectionConfig,
     JiraConnectionTest,
@@ -76,7 +72,7 @@ class JiraConfigurationService:
         Raises:
             ValidationError: If configuration is invalid
             ExternalServiceError: If connection test fails
-            DatabaseError: If database operation fails
+            SprintReportsException: If database operation fails
         """
         try:
             self.logger.info(f"Creating JIRA configuration '{name}' for environment '{environment}'")
@@ -95,17 +91,21 @@ class JiraConfigurationService:
                 instance_type = self._detect_instance_type(config.url)
             
             # Create configuration model
+            auth_method_value = config.auth_method.value
+            status_value = ConnectionStatus.ACTIVE.value if test_connection else ConnectionStatus.PENDING.value
+            instance_type_value = JiraInstanceType.CLOUD.value if instance_type else JiraInstanceType.SERVER.value
+            
             jira_config = JiraConfiguration(
                 name=name,
                 description=description,
                 url=config.url,
-                instance_type=JiraInstanceType.CLOUD if instance_type else JiraInstanceType.SERVER,
-                auth_method=JiraAuthMethod(config.auth_method.value),
+                instance_type=instance_type_value,
+                auth_method=auth_method_value,
                 email=config.email,
                 username=config.username,
                 created_by_user_id=user_id,
                 environment=environment,
-                status=ConnectionStatus.ACTIVE if test_connection else ConnectionStatus.PENDING
+                status=status_value
             )
             
             # Set encrypted credentials using properties
@@ -140,11 +140,11 @@ class JiraConfigurationService:
         except SQLAlchemyError as e:
             await self.db.rollback()
             self.logger.error(f"Database error creating configuration: {e}")
-            raise DatabaseError("Failed to create JIRA configuration")
+            raise SprintReportsException("Failed to create JIRA configuration")
         except Exception as e:
             await self.db.rollback()
             self.logger.error(f"Unexpected error creating configuration: {e}", exc_info=True)
-            raise DatabaseError("Unexpected error creating JIRA configuration")
+            raise SprintReportsException("Unexpected error creating JIRA configuration")
     
     async def get_configuration(self, config_id: int) -> Optional[JiraConfiguration]:
         """
@@ -157,7 +157,7 @@ class JiraConfigurationService:
             JIRA configuration or None if not found
             
         Raises:
-            DatabaseError: If database operation fails
+            SprintReportsException: If database operation fails
         """
         try:
             self.logger.debug(f"Retrieving JIRA configuration {config_id}")
@@ -176,7 +176,7 @@ class JiraConfigurationService:
             
         except SQLAlchemyError as e:
             self.logger.error(f"Database error retrieving configuration {config_id}: {e}")
-            raise DatabaseError(f"Failed to retrieve JIRA configuration {config_id}")
+            raise SprintReportsException(f"Failed to retrieve JIRA configuration {config_id}")
     
     async def get_configurations(
         self,
@@ -200,7 +200,7 @@ class JiraConfigurationService:
             List of JIRA configurations
             
         Raises:
-            DatabaseError: If database operation fails
+            SprintReportsException: If database operation fails
         """
         try:
             self.logger.debug(
@@ -236,7 +236,7 @@ class JiraConfigurationService:
             
         except SQLAlchemyError as e:
             self.logger.error(f"Database error retrieving configurations: {e}")
-            raise DatabaseError("Failed to retrieve JIRA configurations")
+            raise SprintReportsException("Failed to retrieve JIRA configurations")
     
     async def get_default_configuration(
         self, 
@@ -252,7 +252,7 @@ class JiraConfigurationService:
             Default JIRA configuration or None if not found
             
         Raises:
-            DatabaseError: If database operation fails
+            SprintReportsException: If database operation fails
         """
         try:
             self.logger.debug(f"Retrieving default JIRA configuration for environment '{environment}'")
@@ -277,7 +277,7 @@ class JiraConfigurationService:
             
         except SQLAlchemyError as e:
             self.logger.error(f"Database error retrieving default configuration: {e}")
-            raise DatabaseError("Failed to retrieve default JIRA configuration")
+            raise SprintReportsException("Failed to retrieve default JIRA configuration")
     
     async def update_configuration(
         self,
@@ -299,7 +299,7 @@ class JiraConfigurationService:
         Raises:
             ValidationError: If update data is invalid
             ExternalServiceError: If connection test fails
-            DatabaseError: If database operation fails
+            SprintReportsException: If database operation fails
         """
         try:
             self.logger.info(f"Updating JIRA configuration {config_id}")
@@ -347,11 +347,11 @@ class JiraConfigurationService:
         except SQLAlchemyError as e:
             await self.db.rollback()
             self.logger.error(f"Database error updating configuration {config_id}: {e}")
-            raise DatabaseError(f"Failed to update JIRA configuration {config_id}")
+            raise SprintReportsException(f"Failed to update JIRA configuration {config_id}")
         except Exception as e:
             await self.db.rollback()
             self.logger.error(f"Unexpected error updating configuration {config_id}: {e}", exc_info=True)
-            raise DatabaseError("Unexpected error updating JIRA configuration")
+            raise SprintReportsException("Unexpected error updating JIRA configuration")
     
     async def delete_configuration(self, config_id: int) -> bool:
         """
@@ -365,7 +365,7 @@ class JiraConfigurationService:
             
         Raises:
             ValidationError: If trying to delete the last active configuration
-            DatabaseError: If database operation fails
+            SprintReportsException: If database operation fails
         """
         try:
             self.logger.info(f"Deleting JIRA configuration {config_id}")
@@ -398,7 +398,7 @@ class JiraConfigurationService:
         except SQLAlchemyError as e:
             await self.db.rollback()
             self.logger.error(f"Database error deleting configuration {config_id}: {e}")
-            raise DatabaseError(f"Failed to delete JIRA configuration {config_id}")
+            raise SprintReportsException(f"Failed to delete JIRA configuration {config_id}")
     
     async def test_configuration_connection(
         self, 
@@ -416,19 +416,25 @@ class JiraConfigurationService:
             Connection test result
             
         Raises:
-            DatabaseError: If configuration not found or database error
+            SprintReportsException: If configuration not found or database error
         """
         try:
             self.logger.info(f"Testing connection for JIRA configuration {config_id}")
             
             config = await self.get_configuration(config_id)
             if not config:
-                raise DatabaseError(f"JIRA configuration {config_id} not found")
+                raise SprintReportsException(f"JIRA configuration {config_id} not found")
             
             # Create connection config for testing
+            # Ensure auth_method is properly converted to enum
+            if isinstance(config.auth_method, str):
+                auth_method = JiraAuthMethod(config.auth_method)
+            else:
+                auth_method = config.auth_method
+            
             connection_config = JiraConnectionConfig(
                 url=config.url,
-                auth_method=JiraAuthMethod(config.auth_method.value),
+                auth_method=auth_method,
                 email=config.email,
                 api_token=config.api_token,
                 username=config.username,
@@ -457,7 +463,7 @@ class JiraConfigurationService:
             
         except SQLAlchemyError as e:
             self.logger.error(f"Database error testing configuration {config_id}: {e}")
-            raise DatabaseError(f"Failed to test JIRA configuration {config_id}")
+            raise SprintReportsException(f"Failed to test JIRA configuration {config_id}")
     
     async def monitor_configurations(self, environment: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -470,7 +476,7 @@ class JiraConfigurationService:
             Monitoring summary with health metrics
             
         Raises:
-            DatabaseError: If database operation fails
+            SprintReportsException: If database operation fails
         """
         try:
             self.logger.debug(f"Monitoring JIRA configurations for environment: {environment}")
@@ -526,7 +532,7 @@ class JiraConfigurationService:
             
         except SQLAlchemyError as e:
             self.logger.error(f"Database error monitoring configurations: {e}")
-            raise DatabaseError("Failed to monitor JIRA configurations")
+            raise SprintReportsException("Failed to monitor JIRA configurations")
     
     # Private helper methods
     
@@ -639,9 +645,16 @@ class JiraConfigurationService:
         updates: Dict[str, Any]
     ) -> JiraConnectionConfig:
         """Create a test configuration from existing config plus updates."""
+        # Get auth method value, handling both string and enum cases
+        auth_method_value = updates.get('auth_method', config.auth_method)
+        if isinstance(auth_method_value, str):
+            auth_method = JiraAuthMethod(auth_method_value)
+        else:
+            auth_method = auth_method_value
+        
         return JiraConnectionConfig(
             url=updates.get('url', config.url),
-            auth_method=JiraAuthMethod(updates.get('auth_method', config.auth_method)),
+            auth_method=auth_method,
             email=updates.get('email', config.email),
             api_token=updates.get('api_token', config.api_token),
             username=updates.get('username', config.username),

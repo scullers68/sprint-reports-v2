@@ -20,6 +20,10 @@ services:
       - ENABLE_REAL_TIME_UPDATES=true
       - ENABLE_ML_INSIGHTS=false
       - ENABLE_AUDIT_LOGGING=true
+      # JIRA Integration - Add your actual values
+      - JIRA_URL=${JIRA_URL:-https://your-domain.atlassian.net}
+      - JIRA_EMAIL=${JIRA_EMAIL:-your-email@company.com}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN:-your-jira-api-token}
     depends_on:
       - db
       - redis
