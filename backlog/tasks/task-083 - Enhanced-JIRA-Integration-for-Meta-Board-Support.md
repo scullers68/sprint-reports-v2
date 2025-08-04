@@ -1,7 +1,7 @@
 ---
 id: task-083
 title: Enhanced JIRA Integration for Meta-Board Support
-status: To Do
+status: In Progress
 assignee:
   - >-
     [ ] Enhance existing JiraService to detect project sources for issues in
@@ -15,6 +15,7 @@ assignee:
     API failures in meta-board scenarios, [ ] Ensure existing single-board JIRA
     integration remains fully functional and unaffected
 created_date: '2025-08-04'
+updated_date: '2025-08-04'
 labels: []
 dependencies: []
 ---
