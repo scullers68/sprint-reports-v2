@@ -1,7 +1,7 @@
 ---
 id: task-078
 title: Meta-Board Detection and Configuration
-status: In Progress
+status: Done
 assignee:
   - claude-code
 created_date: '2025-08-04'
