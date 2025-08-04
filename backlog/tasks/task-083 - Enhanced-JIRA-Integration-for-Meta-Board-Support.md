@@ -3,7 +3,7 @@ id: task-083
 title: Enhanced JIRA Integration for Meta-Board Support
 status: In Progress
 assignee:
-  - architecture-analyzer
+  - '@fullstack-engineer'
 created_date: '2025-08-04'
 updated_date: '2025-08-04'
 labels: []
