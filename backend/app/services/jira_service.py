@@ -339,18 +339,41 @@ class JiraService:
         return self._field_mapping_service
     
     async def get_sprints(self, board_id: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Get sprints from JIRA."""
+        """Get sprints from JIRA with full pagination support."""
         client = await self._get_client()
         
         try:
             if board_id:
                 endpoint = f"/rest/agile/1.0/board/{board_id}/sprint"
             else:
-                # Get all sprints - might need pagination
+                # Get all sprints - with pagination
                 endpoint = "/rest/agile/1.0/sprint"
             
-            response = await client.get(endpoint, params={"maxResults": 100})
-            return response.get("values", [])
+            # Implement pagination to get all sprints
+            all_sprints = []
+            start_at = 0
+            max_results = 50  # Use smaller batches for better performance
+            
+            while True:
+                response = await client.get(endpoint, params={
+                    "maxResults": max_results,
+                    "startAt": start_at
+                })
+                
+                sprints = response.get("values", [])
+                if not sprints:
+                    break
+                    
+                all_sprints.extend(sprints)
+                
+                # Check if we've got all results
+                if len(sprints) < max_results:
+                    break
+                    
+                start_at += max_results
+            
+            logger.debug(f"Retrieved {len(all_sprints)} sprints from {'board ' + str(board_id) if board_id else 'all boards'}")
+            return all_sprints
             
         except Exception as e:
             logger.error(f"Failed to get sprints: {e}")
@@ -662,18 +685,42 @@ class JiraService:
         return (usage_score + name_score) / 2.0
     
     async def get_boards(self, project_key: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get boards from JIRA."""
+        """Get boards from JIRA with full pagination support."""
         client = await self._get_client()
         
         try:
             endpoint = "/rest/agile/1.0/board"
-            params = {"maxResults": 100}
             
-            if project_key:
-                params["projectKeyOrId"] = project_key
+            # Implement pagination to get all boards
+            all_boards = []
+            start_at = 0
+            max_results = 50  # Use smaller batches for better performance
             
-            response = await client.get(endpoint, params=params)
-            return response.get("values", [])
+            while True:
+                params = {
+                    "maxResults": max_results,
+                    "startAt": start_at
+                }
+                
+                if project_key:
+                    params["projectKeyOrId"] = project_key
+                
+                response = await client.get(endpoint, params=params)
+                boards = response.get("values", [])
+                
+                if not boards:
+                    break
+                    
+                all_boards.extend(boards)
+                
+                # Check if we've got all results
+                if len(boards) < max_results:
+                    break
+                    
+                start_at += max_results
+            
+            logger.debug(f"Retrieved {len(all_boards)} boards{' for project ' + project_key if project_key else ''}")
+            return all_boards
             
         except Exception as e:
             logger.error(f"Failed to get boards: {e}")

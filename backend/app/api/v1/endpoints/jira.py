@@ -1043,6 +1043,7 @@ async def list_jira_configurations(
 @router.get("/configurations/{config_id}", response_model=JiraConfigurationResponse)
 async def get_jira_configuration(
     config_id: int,
+    include_sensitive: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> JiraConfigurationResponse:
@@ -1069,8 +1070,23 @@ async def get_jira_configuration(
         
         logger.debug(f"Found JIRA configuration {config_id}")
         
-        # Return response with masked sensitive fields
-        return JiraConfigurationResponse.from_orm_with_security(jira_config)
+        # Return response with optionally decrypted sensitive fields
+        if include_sensitive:
+            # Decrypt sensitive fields for editing
+            from app.core.encryption import decrypt_sensitive_field
+            
+            response = JiraConfigurationResponse.from_orm_with_security(jira_config)
+            
+            # Add decrypted sensitive fields
+            if jira_config.api_token:
+                response.api_token = decrypt_sensitive_field(jira_config.api_token)
+            if jira_config._password:
+                response.password = decrypt_sensitive_field(jira_config._password)
+                
+            return response
+        else:
+            # Return response with masked sensitive fields
+            return JiraConfigurationResponse.from_orm_with_security(jira_config)
         
     except HTTPException:
         raise
@@ -1317,4 +1333,133 @@ async def monitor_jira_configurations(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to monitor JIRA configurations"
+        )
+
+
+@router.get("/sprints/search")
+async def search_sprints(
+    search: Optional[str] = None,
+    state: Optional[str] = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db)
+) -> List[Dict[str, Any]]:
+    """
+    Search for sprints using cached data for fast responses.
+    
+    Args:
+        search: Optional search term to filter sprints by name
+        state: Optional state filter ('active', 'closed', 'future')
+        limit: Maximum number of sprints to return (default 50)
+    
+    Returns:
+        List of cached sprints matching the search criteria with board and project info
+    """
+    try:
+        logger.info(f"Searching cached sprints with search='{search}', state='{state}'")
+        
+        # Check if JIRA is configured via environment variables
+        from app.core.config import settings
+        
+        if not settings.JIRA_URL or not settings.JIRA_API_TOKEN or not settings.JIRA_EMAIL:
+            # Fall back to cached sprint search if available
+            from app.services.sprint_cache_service import SprintCacheService
+            cache_service = SprintCacheService(db)
+            
+            # Search cached sprints
+            sprints = await cache_service.search_cached_sprints(
+                search=search,
+                state=state,
+                limit=limit,
+                include_closed=(state == 'closed')
+            )
+            
+            if not sprints:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="JIRA not configured and no cached sprints available. Please set JIRA environment variables."
+                )
+        else:
+            # Use cached sprint search for performance
+            from app.services.sprint_cache_service import SprintCacheService
+            cache_service = SprintCacheService(db)
+            
+            # Search cached sprints
+            sprints = await cache_service.search_cached_sprints(
+                search=search,
+                state=state,
+                limit=limit,
+                include_closed=(state == 'closed')
+            )
+        
+        logger.info(f"Found {len(sprints)} cached sprints matching search criteria for user {current_user.id}")
+        return sprints
+        
+    except Exception as e:
+        logger.error(f"Failed to search cached sprints: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search sprints: {str(e)}"
+        )
+
+
+@router.get("/sprints/cache/status")
+async def get_sprint_cache_status(
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get status of the sprint cache and background refresh service.
+    
+    Returns information about cached sprints and refresh schedule.
+    """
+    try:
+        # Get cache statistics
+        from app.services.sprint_cache_service import SprintCacheService
+        cache_service = SprintCacheService(db)
+        cache_stats = await cache_service.get_cache_stats()
+        
+        # Get background service status
+        from app.services.background_tasks import background_service
+        task_status = await background_service.get_task_status()
+        
+        return {
+            'cache': cache_stats,
+            'background_service': task_status,
+            'status': 'healthy' if task_status['is_running'] else 'stopped'
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get sprint cache status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cache status: {str(e)}"
+        )
+
+
+@router.post("/sprints/cache/refresh")
+async def force_sprint_cache_refresh(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Force an immediate refresh of the sprint cache.
+    
+    This will fetch all sprints from JIRA and update the cache.
+    """
+    try:
+        logger.info(f"Manual sprint cache refresh requested by user {current_user.id}")
+        
+        # Trigger background service refresh
+        from app.services.background_tasks import background_service
+        refresh_stats = await background_service.force_sprint_refresh()
+        
+        return {
+            'message': 'Sprint cache refresh completed',
+            'stats': refresh_stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to refresh sprint cache: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh cache: {str(e)}"
         )
