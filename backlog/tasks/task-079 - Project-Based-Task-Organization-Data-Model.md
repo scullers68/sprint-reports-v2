@@ -1,7 +1,7 @@
 ---
 id: task-079
 title: Project-Based Task Organization Data Model
-status: To Do
+status: In Progress
 assignee:
   - >-
     [ ] Create ProjectWorkstream model to represent project sources within
@@ -15,6 +15,7 @@ assignee:
     records, [ ] Add validation constraints to ensure data integrity across
     project-sprint relationships
 created_date: '2025-08-04'
+updated_date: '2025-08-04'
 labels: []
 dependencies: []
 ---
