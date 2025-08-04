@@ -1,7 +1,7 @@
 ---
 id: task-081
 title: Project Progress Reporting Service
-status: To Do
+status: In Progress
 assignee:
   - >-
     [ ] Extend existing reporting service to support project-based progress
@@ -15,6 +15,7 @@ assignee:
     existing sprint reporting infrastructure without breaking current
     functionality
 created_date: '2025-08-04'
+updated_date: '2025-08-04'
 labels: []
 dependencies: []
 ---
