@@ -6,7 +6,7 @@ Provides centralized routing for all API v1 endpoints.
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, sprints, queues, reports, capacity, users, security, admin, webhooks, field_mappings, audit, jira
+from app.api.v1.endpoints import auth, sprints, queues, reports, capacity, users, security, admin, webhooks, field_mappings, audit, jira, meta_boards
 
 api_router = APIRouter()
 
@@ -23,3 +23,4 @@ api_router.include_router(admin.router, prefix="/admin", tags=["administration"]
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(field_mappings.router, prefix="/field-mappings", tags=["field-mappings"])
 api_router.include_router(jira.router, prefix="/jira", tags=["jira"])
+api_router.include_router(meta_boards.router, prefix="/meta-boards", tags=["meta-boards"])

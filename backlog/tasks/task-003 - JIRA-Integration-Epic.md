@@ -1,12 +1,12 @@
 ---
 id: task-003
 title: JIRA Integration Epic - Read-Only Analytics
-status: To Do
+status: In Progress
 assignee:
   - architecture-analyzer
 created_date: '2025-08-01'
-updated_date: '2025-08-03'
-labels: [revised-scope]
+updated_date: '2025-08-04'
+labels: [revised-scope, environment-config, background-service]
 dependencies: []
 ---
 

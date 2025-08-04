@@ -6,6 +6,7 @@ configuration, and validation endpoints.
 """
 
 from datetime import datetime
+from enum import Enum
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field, validator
 
@@ -322,10 +323,13 @@ class JiraConfigurationResponse(BaseModel):
     auth_method: str
     email: Optional[str]
     username: Optional[str]
-    # Sensitive fields are masked
+    # Sensitive fields are masked by default
     has_api_token: bool = Field(False, description="Whether API token is configured")
     has_password: bool = Field(False, description="Whether password is configured")
     has_oauth_config: bool = Field(False, description="Whether OAuth config is configured")
+    # Optionally included sensitive fields for editing
+    api_token: Optional[str] = Field(None, description="API token (only when include_sensitive=true)")
+    password: Optional[str] = Field(None, description="Password (only when include_sensitive=true)")
     custom_fields: Optional[Dict[str, Any]]
     api_version: Optional[str]
     server_info: Optional[Dict[str, Any]]
@@ -355,8 +359,8 @@ class JiraConfigurationResponse(BaseModel):
             name=config.name,
             description=config.description,
             url=config.url,
-            instance_type=config.instance_type.value,
-            auth_method=config.auth_method.value,
+            instance_type=config.instance_type,
+            auth_method=config.auth_method,
             email=config.email,
             username=config.username,
             has_api_token=bool(config._api_token),
@@ -366,7 +370,7 @@ class JiraConfigurationResponse(BaseModel):
             api_version=config.api_version,
             server_info=config.server_info,
             capabilities=config.capabilities,
-            status=config.status.value,
+            status=config.status,
             is_active=config.is_active,
             is_default=config.is_default,
             last_tested_at=config.last_tested_at,

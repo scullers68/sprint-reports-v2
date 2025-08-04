@@ -31,6 +31,13 @@ class ConflictResolutionStrategy(enum.Enum):
     MANUAL = "manual"
 
 
+class MetaBoardType(enum.Enum):
+    """Enumeration for meta-board types."""
+    SINGLE_PROJECT = "single_project"
+    MULTI_PROJECT = "multi_project" 
+    META_BOARD = "meta_board"
+
+
 class Sprint(Base):
     """Sprint model for JIRA sprint tracking."""
     
@@ -61,10 +68,17 @@ class Sprint(Base):
     jira_project_key = Column(String(50), index=True)
     jira_version = Column(String(20))  # JIRA version for compatibility
     
+    # Meta-board support
+    meta_board_type = Column(Enum(MetaBoardType), default=MetaBoardType.SINGLE_PROJECT, nullable=False, index=True)
+    project_source = Column(JSON)  # Track task origins from multiple projects for meta-boards
+    
     # Relationships - temporarily disabled for MVP authentication testing
     # analyses = relationship("SprintAnalysis", back_populates="sprint", cascade="all, delete-orphan")
     # queues = relationship("SprintQueue", back_populates="sprint", cascade="all, delete-orphan")
     # reports = relationship("Report", back_populates="sprint", cascade="all, delete-orphan")
+    
+    # Project-based organization relationships
+    project_associations = relationship("ProjectSprintAssociation", back_populates="sprint", cascade="all, delete-orphan")
     
     # Table constraints and indexes
     __table_args__ = (
@@ -83,6 +97,7 @@ class Sprint(Base):
         Index('idx_sprint_board', 'board_id', 'state'),
         Index('idx_sprint_sync_status', 'sync_status', 'jira_last_updated'),
         Index('idx_sprint_project_key', 'jira_project_key'),
+        Index('idx_sprint_meta_board', 'meta_board_type', 'board_id'),
     )
     
     @validates('state')
@@ -108,8 +123,113 @@ class Sprint(Base):
             raise ValueError(f"Invalid sync status. Must be one of: {valid_statuses}")
         return sync_status
     
+    @validates('meta_board_type')
+    def validate_meta_board_type(self, key, meta_board_type):
+        """Validate meta board type."""
+        if meta_board_type and not isinstance(meta_board_type, MetaBoardType):
+            try:
+                # Try to convert string to enum if needed
+                if isinstance(meta_board_type, str):
+                    meta_board_type = MetaBoardType(meta_board_type)
+            except ValueError:
+                valid_types = [t.value for t in MetaBoardType]
+                raise ValueError(f"Invalid meta board type. Must be one of: {valid_types}")
+        return meta_board_type
+    
     def __repr__(self) -> str:
         return f"<Sprint(id={self.id}, name='{self.name}', state='{self.state}')>"
+    
+    @property
+    def project_workstreams(self):
+        """Get all project workstreams associated with this sprint."""
+        return [assoc.project_workstream for assoc in self.project_associations if assoc.is_active]
+    
+    @property
+    def primary_projects(self):
+        """Get primary project workstreams for this sprint."""
+        return [assoc.project_workstream for assoc in self.project_associations 
+                if assoc.is_active and assoc.association_type.value == 'primary']
+    
+    @property
+    def project_aggregation_metadata(self):
+        """Get aggregated metadata for all projects in this sprint."""
+        if not self.project_associations:
+            return {}
+        
+        metadata = {
+            'total_projects': len([assoc for assoc in self.project_associations if assoc.is_active]),
+            'primary_projects': len([assoc for assoc in self.project_associations 
+                                   if assoc.is_active and assoc.association_type.value == 'primary']),
+            'secondary_projects': len([assoc for assoc in self.project_associations 
+                                     if assoc.is_active and assoc.association_type.value == 'secondary']),
+            'dependency_projects': len([assoc for assoc in self.project_associations 
+                                      if assoc.is_active and assoc.association_type.value == 'dependency']),
+            'total_expected_points': sum(assoc.expected_story_points or 0 for assoc in self.project_associations if assoc.is_active),
+            'project_keys': [assoc.project_workstream.project_key for assoc in self.project_associations if assoc.is_active],
+            'is_meta_board': self.meta_board_type.value in ['multi_project', 'meta_board']
+        }
+        return metadata
+
+
+class MetaBoardConfiguration(Base):
+    """Meta-board configuration for aggregating tasks from multiple projects."""
+    
+    __tablename__ = "meta_board_configurations"
+    
+    # Board identification
+    board_id = Column(Integer, nullable=False, unique=True, index=True)
+    board_name = Column(String(200), nullable=False)
+    
+    # Configuration metadata
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    configuration_name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Aggregation rules
+    aggregation_rules = Column(JSON, nullable=False)  # Rules for how to aggregate project data
+    project_mappings = Column(JSON, nullable=False)   # Project source mappings and filtering
+    
+    # Validation settings
+    require_consistency_validation = Column(Boolean, default=True, nullable=False)
+    validation_rules = Column(JSON, nullable=True)    # Custom validation rules
+    
+    # Created by user tracking
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    last_modified_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Relationships
+    created_by_user = relationship("User", foreign_keys=[created_by])
+    last_modified_by_user = relationship("User", foreign_keys=[last_modified_by])
+    
+    # Table constraints and indexes
+    __table_args__ = (
+        # Ensure configuration name is not empty
+        CheckConstraint("trim(configuration_name) != ''", name='config_name_not_empty'),
+        # Ensure board name is not empty  
+        CheckConstraint("trim(board_name) != ''", name='board_name_not_empty'),
+        # Performance indexes
+        Index('idx_meta_board_active', 'is_active', 'board_id'),
+        Index('idx_meta_board_config_name', 'configuration_name'),
+    )
+    
+    @validates('configuration_name', 'board_name')
+    def validate_names(self, key, value):
+        """Validate configuration and board names."""
+        if value and len(value.strip()) == 0:
+            raise ValueError(f"{key} cannot be empty")
+        return value
+    
+    @validates('aggregation_rules', 'project_mappings')
+    def validate_required_json(self, key, value):
+        """Validate required JSON fields."""
+        if value is None:
+            raise ValueError(f"{key} is required and cannot be null")
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} must be a valid JSON object")
+        return value
+    
+    def __repr__(self) -> str:
+        return f"<MetaBoardConfiguration(id={self.id}, board_id={self.board_id}, name='{self.configuration_name}')>"
 
 
 class SprintAnalysis(Base):
@@ -123,6 +243,10 @@ class SprintAnalysis(Base):
     # Analysis metadata
     analysis_type = Column(String(50), nullable=False, default="discipline_team")
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Project-based analysis fields
+    project_key = Column(String(50), nullable=True, index=True)
+    project_name = Column(String(200), nullable=True)
     
     # Analysis results
     total_issues = Column(Integer, nullable=False, default=0)
@@ -152,6 +276,8 @@ class SprintAnalysis(Base):
         # Performance indexes
         Index('idx_analysis_sprint_type', 'sprint_id', 'analysis_type'),
         Index('idx_analysis_created', 'created_at', 'analysis_type'),
+        Index('idx_analysis_project_key', 'project_key', 'analysis_type'),
+        Index('idx_analysis_sprint_project', 'sprint_id', 'project_key'),
     )
     
     @validates('total_issues', 'total_story_points', 'discipline_teams_count')
@@ -163,6 +289,41 @@ class SprintAnalysis(Base):
     
     def __repr__(self) -> str:
         return f"<SprintAnalysis(id={self.id}, sprint_id={self.sprint_id}, teams={self.discipline_teams_count})>"
+    
+    @property
+    def project_breakdown(self):
+        """Get project-specific breakdown from discipline_breakdown."""
+        if not self.discipline_breakdown or not self.project_key:
+            return {}
+        
+        # Extract project-specific data from the discipline breakdown
+        project_data = {
+            'project_key': self.project_key,
+            'project_name': self.project_name,
+            'total_issues': self.total_issues,
+            'total_story_points': self.total_story_points,
+            'discipline_teams': self.discipline_breakdown
+        }
+        return project_data
+    
+    def get_project_metrics(self):
+        """Get comprehensive project metrics for this analysis."""
+        if not self.project_key:
+            return None
+        
+        # Calculate project-specific metrics
+        metrics = {
+            'project_key': self.project_key,
+            'project_name': self.project_name,
+            'analysis_date': self.created_at,
+            'total_issues': self.total_issues,
+            'total_story_points': self.total_story_points,
+            'discipline_teams_count': self.discipline_teams_count,
+            'average_points_per_team': self.total_story_points / self.discipline_teams_count if self.discipline_teams_count > 0 else 0,
+            'average_issues_per_team': self.total_issues / self.discipline_teams_count if self.discipline_teams_count > 0 else 0,
+            'discipline_breakdown': self.discipline_breakdown
+        }
+        return metrics
 
 
 class SyncMetadata(Base):

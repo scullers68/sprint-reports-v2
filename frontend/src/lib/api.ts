@@ -382,6 +382,108 @@ class ApiClient {
     return this.get<SprintAnalysis>(`/sprints/${sprintId}/analysis`);
   }
 
+  // JIRA Discovery Methods
+  async getJiraProjects(params?: {
+    search?: string;
+    limit?: number;
+  }): Promise<any[]> {
+    return this.get<any[]>('/jira/projects', params);
+  }
+
+  async searchJiraSprints(params?: {
+    search?: string;
+    state?: string;
+    limit?: number;
+  }): Promise<any[]> {
+    return this.get<any[]>('/jira/sprints/search', params);
+  }
+
+  async getJiraProjectBoards(
+    projectKey: string, 
+    params?: { board_type?: string }
+  ): Promise<any[]> {
+    return this.get<any[]>(`/jira/projects/${projectKey}/boards`, params);
+  }
+
+  async getJiraBoardConfiguration(boardId: number): Promise<any> {
+    return this.get<any>(`/jira/boards/${boardId}/configuration`);
+  }
+
+  async selectJiraProject(
+    projectKey: string, 
+    boardIds: number[]
+  ): Promise<any> {
+    return this.post<any>(`/jira/projects/${projectKey}/select`, { board_ids: boardIds });
+  }
+
+  async testJiraConnection(config: {
+    url: string;
+    email: string;
+    api_token: string;
+    auth_method: string;
+  }): Promise<any> {
+    return this.post<any>('/jira/connection/test', {
+      config,
+      test_operations: ['server_info', 'projects', 'boards']
+    });
+  }
+
+  // JIRA Configuration Management Methods
+  async createJiraConfiguration(data: {
+    name: string;
+    description?: string;
+    config: {
+      url: string;
+      email: string;
+      api_token: string;
+      auth_method: string;
+    };
+    environment?: string;
+    test_connection?: boolean;
+  }): Promise<any> {
+    return this.post<any>('/jira/configurations', data);
+  }
+
+  async getJiraConfigurations(params?: {
+    environment?: string;
+    status_filter?: string;
+    is_active?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<any> {
+    return this.get<any>('/jira/configurations', params);
+  }
+
+  async getJiraConfiguration(configId: number, includeSensitive: boolean = false): Promise<any> {
+    return this.get<any>(`/jira/configurations/${configId}`, { include_sensitive: includeSensitive });
+  }
+
+  async updateJiraConfiguration(configId: number, data: {
+    name?: string;
+    description?: string;
+    config?: {
+      url?: string;
+      email?: string;
+      api_token?: string;
+      auth_method?: string;
+    };
+    test_connection?: boolean;
+  }): Promise<any> {
+    return this.put<any>(`/jira/configurations/${configId}`, data);
+  }
+
+  async deleteJiraConfiguration(configId: number): Promise<void> {
+    return this.delete<void>(`/jira/configurations/${configId}`);
+  }
+
+  async testJiraConfigurationById(configId: number, updateStatus: boolean = true): Promise<any> {
+    return this.post<any>(`/jira/configurations/${configId}/test`, { update_status: updateStatus });
+  }
+
+  async getDefaultJiraConfiguration(environment: string = 'production'): Promise<any> {
+    return this.get<any>('/jira/configurations/default', { environment });
+  }
+
   // Health Check
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
     return this.get<{ status: string; timestamp: string }>('/health');

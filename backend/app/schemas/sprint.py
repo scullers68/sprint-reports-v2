@@ -8,6 +8,14 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from pydantic import BaseModel, Field, validator
+from enum import Enum
+
+
+class MetaBoardTypeEnum(str, Enum):
+    """Enumeration for meta-board types in schemas."""
+    SINGLE_PROJECT = "single_project"
+    MULTI_PROJECT = "multi_project"
+    META_BOARD = "meta_board"
 
 
 # Sprint schemas
@@ -27,6 +35,10 @@ class SprintBase(BaseModel):
     jira_board_name: Optional[str] = Field(None, max_length=200)
     jira_project_key: Optional[str] = Field(None, max_length=50)
     jira_version: Optional[str] = Field(None, max_length=20)
+    
+    # Meta-board support
+    meta_board_type: Optional[MetaBoardTypeEnum] = Field(None, description="Type of meta-board configuration")
+    project_source: Optional[Dict[str, Any]] = Field(None, description="Project source tracking for meta-boards")
 
 
 class SprintCreate(SprintBase):
@@ -56,6 +68,10 @@ class SprintUpdate(BaseModel):
     jira_board_name: Optional[str] = Field(None, max_length=200)
     jira_project_key: Optional[str] = Field(None, max_length=50)
     jira_version: Optional[str] = Field(None, max_length=20)
+    
+    # Meta-board support updates
+    meta_board_type: Optional[MetaBoardTypeEnum] = Field(None, description="Type of meta-board configuration")
+    project_source: Optional[Dict[str, Any]] = Field(None, description="Project source tracking for meta-boards")
 
 
 class SprintRead(SprintBase):
@@ -120,3 +136,55 @@ class SprintAnalysisSummary(BaseModel):
     discipline_teams: List[DisciplineTeamStats]
     analysis_date: datetime
     has_capacity_configured: bool = False
+
+
+# Meta-Board Configuration schemas
+class MetaBoardConfigurationBase(BaseModel):
+    """Base meta-board configuration schema."""
+    board_id: int = Field(..., gt=0)
+    board_name: str = Field(..., min_length=1, max_length=200)
+    configuration_name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    is_active: bool = Field(default=True)
+    require_consistency_validation: bool = Field(default=True)
+
+
+class MetaBoardConfigurationCreate(MetaBoardConfigurationBase):
+    """Schema for creating a meta-board configuration."""
+    aggregation_rules: Dict[str, Any] = Field(..., description="Rules for aggregating project data")
+    project_mappings: Dict[str, Any] = Field(..., description="Project source mappings and filtering")
+    validation_rules: Optional[Dict[str, Any]] = Field(None, description="Custom validation rules")
+
+
+class MetaBoardConfigurationUpdate(BaseModel):
+    """Schema for updating a meta-board configuration."""
+    configuration_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    aggregation_rules: Optional[Dict[str, Any]] = Field(None, description="Rules for aggregating project data")
+    project_mappings: Optional[Dict[str, Any]] = Field(None, description="Project source mappings and filtering")
+    require_consistency_validation: Optional[bool] = None
+    validation_rules: Optional[Dict[str, Any]] = Field(None, description="Custom validation rules")
+    is_active: Optional[bool] = None
+
+
+class MetaBoardConfigurationRead(MetaBoardConfigurationBase):
+    """Schema for reading meta-board configuration data."""
+    id: int
+    aggregation_rules: Dict[str, Any]
+    project_mappings: Dict[str, Any]
+    validation_rules: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class MetaBoardDetectionResult(BaseModel):
+    """Schema for meta-board detection results."""
+    is_meta_board: bool
+    board_id: int
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    analysis: Dict[str, Any]
+    suggestions: List[Dict[str, Any]]
+    error: Optional[str] = None

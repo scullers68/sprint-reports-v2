@@ -391,3 +391,294 @@ async def validate_data_consistency(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to validate data consistency: {str(e)}"
         )
+
+
+# Meta-Board Configuration Endpoints
+
+@router.post("/meta-boards/detect/{board_id}")
+async def detect_meta_board_configuration(
+    board_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Analyze a board to detect if it should be configured as a meta-board."""
+    jira_service = JiraService()
+    
+    try:
+        async with jira_service:
+            detection_results = await jira_service.detect_meta_board_configuration(board_id)
+        
+        return {
+            "message": f"Meta-board detection completed for board {board_id}",
+            "detection_results": detection_results
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to detect meta-board configuration: {str(e)}"
+        )
+
+
+@router.post("/meta-boards/configure")
+async def create_meta_board_configuration(
+    *,
+    db: AsyncSession = Depends(get_db),
+    board_id: int,
+    configuration_name: str,
+    description: Optional[str] = None,
+    aggregation_rules: dict,
+    project_mappings: dict,
+    require_consistency_validation: bool = True,
+    validation_rules: Optional[dict] = None
+):
+    """Create a new meta-board configuration."""
+    from app.models.sprint import MetaBoardConfiguration
+    from sqlalchemy import select
+    
+    try:
+        # Check if configuration already exists for this board
+        result = await db.execute(
+            select(MetaBoardConfiguration).where(MetaBoardConfiguration.board_id == board_id)
+        )
+        existing_config = result.scalar_one_or_none()
+        
+        if existing_config:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Meta-board configuration already exists for board {board_id}"
+            )
+        
+        # Get board information from JIRA
+        jira_service = JiraService()
+        async with jira_service:
+            board_info = await jira_service._get_sprint_board_info(None)  # We'll need to modify this
+            board_name = f"Board {board_id}"  # Default fallback
+            
+            # Create new configuration
+            new_config = MetaBoardConfiguration(
+                board_id=board_id,
+                board_name=board_name,
+                configuration_name=configuration_name,
+                description=description,
+                aggregation_rules=aggregation_rules,
+                project_mappings=project_mappings,
+                require_consistency_validation=require_consistency_validation,
+                validation_rules=validation_rules,
+                is_active=True
+            )
+            
+            db.add(new_config)
+            await db.commit()
+            await db.refresh(new_config)
+            
+            return {
+                "message": "Meta-board configuration created successfully",
+                "configuration": {
+                    "id": new_config.id,
+                    "board_id": new_config.board_id,
+                    "configuration_name": new_config.configuration_name,
+                    "is_active": new_config.is_active,
+                    "created_at": new_config.created_at.isoformat()
+                }
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create meta-board configuration: {str(e)}"
+        )
+
+
+@router.get("/meta-boards/configurations")
+async def list_meta_board_configurations(
+    db: AsyncSession = Depends(get_db),
+    active_only: bool = Query(True, description="Only return active configurations")
+):
+    """List all meta-board configurations."""
+    from app.models.sprint import MetaBoardConfiguration
+    from sqlalchemy import select
+    
+    try:
+        query = select(MetaBoardConfiguration)
+        if active_only:
+            query = query.where(MetaBoardConfiguration.is_active == True)
+        
+        result = await db.execute(query.order_by(MetaBoardConfiguration.created_at.desc()))
+        configurations = result.scalars().all()
+        
+        return {
+            "configurations": [
+                {
+                    "id": config.id,
+                    "board_id": config.board_id,
+                    "board_name": config.board_name,
+                    "configuration_name": config.configuration_name,
+                    "description": config.description,
+                    "is_active": config.is_active,
+                    "require_consistency_validation": config.require_consistency_validation,
+                    "created_at": config.created_at.isoformat(),
+                    "updated_at": config.updated_at.isoformat()
+                }
+                for config in configurations
+            ]
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list meta-board configurations: {str(e)}"
+        )
+
+
+@router.get("/meta-boards/configurations/{config_id}")
+async def get_meta_board_configuration(
+    config_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get a specific meta-board configuration."""
+    from app.models.sprint import MetaBoardConfiguration
+    from sqlalchemy import select
+    
+    try:
+        result = await db.execute(
+            select(MetaBoardConfiguration).where(MetaBoardConfiguration.id == config_id)
+        )
+        config = result.scalar_one_or_none()
+        
+        if not config:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meta-board configuration not found"
+            )
+        
+        return {
+            "configuration": {
+                "id": config.id,
+                "board_id": config.board_id,
+                "board_name": config.board_name,
+                "configuration_name": config.configuration_name,
+                "description": config.description,
+                "aggregation_rules": config.aggregation_rules,
+                "project_mappings": config.project_mappings,
+                "require_consistency_validation": config.require_consistency_validation,
+                "validation_rules": config.validation_rules,
+                "is_active": config.is_active,
+                "created_at": config.created_at.isoformat(),
+                "updated_at": config.updated_at.isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get meta-board configuration: {str(e)}"
+        )
+
+
+@router.put("/meta-boards/configurations/{config_id}")
+async def update_meta_board_configuration(
+    config_id: int,
+    *,
+    db: AsyncSession = Depends(get_db),
+    configuration_name: Optional[str] = None,
+    description: Optional[str] = None,
+    aggregation_rules: Optional[dict] = None,
+    project_mappings: Optional[dict] = None,
+    require_consistency_validation: Optional[bool] = None,
+    validation_rules: Optional[dict] = None,
+    is_active: Optional[bool] = None
+):
+    """Update an existing meta-board configuration."""
+    from app.models.sprint import MetaBoardConfiguration
+    from sqlalchemy import select
+    
+    try:
+        result = await db.execute(
+            select(MetaBoardConfiguration).where(MetaBoardConfiguration.id == config_id)
+        )
+        config = result.scalar_one_or_none()
+        
+        if not config:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meta-board configuration not found" 
+            )
+        
+        # Update fields if provided
+        if configuration_name is not None:
+            config.configuration_name = configuration_name
+        if description is not None:
+            config.description = description
+        if aggregation_rules is not None:
+            config.aggregation_rules = aggregation_rules
+        if project_mappings is not None:
+            config.project_mappings = project_mappings
+        if require_consistency_validation is not None:
+            config.require_consistency_validation = require_consistency_validation
+        if validation_rules is not None:
+            config.validation_rules = validation_rules
+        if is_active is not None:
+            config.is_active = is_active
+        
+        await db.commit()
+        await db.refresh(config)
+        
+        return {
+            "message": "Meta-board configuration updated successfully",
+            "configuration": {
+                "id": config.id,
+                "board_id": config.board_id,
+                "configuration_name": config.configuration_name,
+                "is_active": config.is_active,
+                "updated_at": config.updated_at.isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update meta-board configuration: {str(e)}"
+        )
+
+
+@router.delete("/meta-boards/configurations/{config_id}")
+async def delete_meta_board_configuration(
+    config_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a meta-board configuration."""
+    from app.models.sprint import MetaBoardConfiguration
+    from sqlalchemy import select
+    
+    try:
+        result = await db.execute(
+            select(MetaBoardConfiguration).where(MetaBoardConfiguration.id == config_id)
+        )
+        config = result.scalar_one_or_none()
+        
+        if not config:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meta-board configuration not found"
+            )
+        
+        await db.delete(config)
+        await db.commit()
+        
+        return {"message": "Meta-board configuration deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete meta-board configuration: {str(e)}"
+        )

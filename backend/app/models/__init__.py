@@ -9,6 +9,8 @@ from app.models.user import User
 from app.models.role import Role
 from app.models.permission import Permission
 from app.models.jira_configuration import JiraConfiguration
+# Import project-based organization models
+from app.models.project import ProjectWorkstream, ProjectSprintAssociation, ProjectSprintMetrics, WorkstreamType, AssociationType
 # Temporarily commenting out problematic models for MVP setup
 # from app.models.sprint import Sprint, SprintAnalysis
 # from app.models.queue import SprintQueue, QueueItem
@@ -24,5 +26,10 @@ __all__ = [
     "User",
     "Role",
     "Permission",
-    "JiraConfiguration"
+    "JiraConfiguration",
+    "ProjectWorkstream",
+    "ProjectSprintAssociation", 
+    "ProjectSprintMetrics",
+    "WorkstreamType",
+    "AssociationType"
 ]

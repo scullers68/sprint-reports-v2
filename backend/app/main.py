@@ -34,9 +34,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
     # Startup
     # await create_db_and_tables()  # Database initialization temporarily disabled for testing
+    
+    # Start background tasks service
+    from app.services.background_tasks import background_service
+    await background_service.start()
+    
     yield
+    
     # Shutdown
-    # Add cleanup tasks here if needed
+    # Stop background tasks service
+    await background_service.stop()
 
 
 # Security scheme for OpenAPI

@@ -1,11 +1,13 @@
 ---
 id: task-076
 title: Add Configuration Status and Management UI
-status: To Do
+status: Cancelled
 assignee: []
 created_date: '2025-08-03'
-labels: []
+updated_date: '2025-08-04'
+labels: [cancelled, scope-change]
 dependencies: []
+cancellation_reason: "Scope changed to environment variable configuration - complex UI no longer needed"
 ---
 
 ## Description

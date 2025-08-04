@@ -11,10 +11,13 @@ from typing import Dict, Any, Optional
 from sqlalchemy import Column, String, Integer, Boolean, Text, Enum, DateTime, JSON, Index, CheckConstraint
 from sqlalchemy.orm import validates
 from sqlalchemy.ext.hybrid import hybrid_property
+import logging
 
 from app.models.base import Base
 from app.core.encryption import encrypt_sensitive_field, decrypt_sensitive_field, should_encrypt_field
 from app.enums import JiraInstanceType, JiraAuthMethod, ConnectionStatus
+
+logger = logging.getLogger(__name__)
 
 
 class JiraConfiguration(Base):
@@ -32,8 +35,9 @@ class JiraConfiguration(Base):
     
     # Connection details
     url = Column(String(500), nullable=False)
-    instance_type = Column(Enum(JiraInstanceType, name='jirainstancetype', native_enum=False), nullable=False, default=JiraInstanceType.CLOUD.value)
-    auth_method = Column(Enum(JiraAuthMethod, name='jiraauthmethod', native_enum=False), nullable=False, default=JiraAuthMethod.TOKEN.value)
+    instance_type = Column(Enum('cloud', 'server', 'datacenter', name='jirainstancetype'), nullable=False, default='cloud')
+    auth_method = Column(Enum('token', 'basic', 'oauth', name='jiraauthmethod'), nullable=False, default='token')
+    
     
     # Authentication credentials (encrypted)
     email = Column(Text, nullable=True)  # Encrypted for Cloud token auth
@@ -49,7 +53,7 @@ class JiraConfiguration(Base):
     capabilities = Column(JSON, nullable=True)  # Detected capabilities
     
     # Connection status and monitoring
-    status = Column(Enum(ConnectionStatus, name='connectionstatus', native_enum=False), nullable=False, default=ConnectionStatus.PENDING.value)
+    status = Column(Enum('active', 'inactive', 'error', 'testing', 'pending', name='connectionstatus'), nullable=False, default='pending')
     is_active = Column(Boolean, default=True, nullable=False)
     is_default = Column(Boolean, default=False, nullable=False)
     

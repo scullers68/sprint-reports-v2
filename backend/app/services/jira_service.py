@@ -394,9 +394,10 @@ class JiraService:
         self, 
         sprint_id: int,
         exclude_subtasks: bool = True,
-        jql_filter: Optional[str] = None
+        jql_filter: Optional[str] = None,
+        detect_meta_board: bool = True
     ) -> List[Dict[str, Any]]:
-        """Get issues for a specific sprint."""
+        """Get issues for a specific sprint with optional meta-board detection."""
         client = await self._get_client()
         
         try:
@@ -412,6 +413,10 @@ class JiraService:
             if exclude_subtasks:
                 issues = [issue for issue in issues
                           if issue.get("fields", {}).get("issuetype", {}).get("subtask", False) is False]
+            
+            # Add meta-board detection and project source tracking
+            if detect_meta_board and issues:
+                issues = await self._enhance_issues_with_project_source(issues, sprint_id)
             
             return issues
             
@@ -1012,6 +1017,260 @@ class JiraService:
             validation["issues"].append(f"Webhook validation failed: {e}")
         
         return validation
+
+    async def _enhance_issues_with_project_source(
+        self, 
+        issues: List[Dict[str, Any]], 
+        sprint_id: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Enhance issues with project source information for meta-board detection.
+        
+        Args:
+            issues: List of JIRA issues
+            sprint_id: Sprint ID for context
+            
+        Returns:
+            Enhanced issues with project source metadata
+        """
+        if not issues:
+            return issues
+        
+        # Analyze project distribution
+        project_keys = set()
+        project_stats = {}
+        
+        for issue in issues:
+            project_key = issue.get("fields", {}).get("project", {}).get("key")
+            if project_key:
+                project_keys.add(project_key)
+                if project_key not in project_stats:
+                    project_stats[project_key] = {
+                        "count": 0,
+                        "project_name": issue.get("fields", {}).get("project", {}).get("name", "Unknown"),
+                        "issues": []
+                    }
+                project_stats[project_key]["count"] += 1
+                project_stats[project_key]["issues"].append(issue.get("key"))
+        
+        # Determine if this is a meta-board scenario (multiple projects)
+        is_meta_board = len(project_keys) > 1
+        board_type = "meta_board" if is_meta_board else "single_project"
+        
+        # Special handling for Board 259 - always consider as potential meta-board
+        sprint_info = await self._get_sprint_board_info(sprint_id)
+        board_id = sprint_info.get("board_id") if sprint_info else None
+        
+        if board_id == 259:
+            logger.info(f"Detected Board 259 in sprint {sprint_id} with {len(project_keys)} projects: {list(project_keys)}")
+            if is_meta_board:
+                board_type = "meta_board"
+            else:
+                board_type = "multi_project"  # Board 259 is configured for multi-project even with single project
+        
+        # Enhance each issue with project source metadata
+        enhanced_issues = []
+        for issue in issues:
+            project_key = issue.get("fields", {}).get("project", {}).get("key")
+            
+            # Add meta-board metadata to the issue
+            issue["meta_board_info"] = {
+                "board_type": board_type,
+                "is_meta_board": is_meta_board,
+                "source_project": project_key,
+                "total_projects": len(project_keys),
+                "project_stats": project_stats,
+                "board_id": board_id
+            }
+            
+            enhanced_issues.append(issue)
+        
+        if is_meta_board:
+            logger.info(f"Meta-board detected in sprint {sprint_id}: {len(project_keys)} projects with {len(issues)} total issues")
+        
+        return enhanced_issues
+    
+    async def _get_sprint_board_info(self, sprint_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get board information for a sprint.
+        
+        Args:
+            sprint_id: JIRA sprint ID
+            
+        Returns:
+            Board information or None if not found
+        """
+        client = await self._get_client()
+        
+        try:
+            # Get sprint details first
+            endpoint = f"/rest/agile/1.0/sprint/{sprint_id}"
+            sprint_response = await client.get(endpoint)
+            
+            board_id = sprint_response.get("originBoardId")
+            if not board_id:
+                return None
+            
+            # Get board details
+            board_endpoint = f"/rest/agile/1.0/board/{board_id}"
+            board_response = await client.get(board_endpoint)
+            
+            return {
+                "board_id": board_id,
+                "board_name": board_response.get("name"),
+                "board_type": board_response.get("type"),
+                "project_key": board_response.get("location", {}).get("projectKey")
+            }
+            
+        except Exception as e:
+            logger.warning(f"Could not get board info for sprint {sprint_id}: {e}")
+            return None
+    
+    async def detect_meta_board_configuration(self, board_id: int) -> Dict[str, Any]:
+        """
+        Analyze a board to detect if it should be configured as a meta-board.
+        
+        Args:
+            board_id: JIRA board ID to analyze
+            
+        Returns:
+            Meta-board detection results and configuration suggestions
+        """
+        try:
+            # Get recent sprints for this board
+            sprints = await self.get_sprints(board_id=board_id)
+            if not sprints:
+                return {
+                    "is_meta_board": False,
+                    "reason": "No sprints found for board",
+                    "suggestions": []
+                }
+            
+            # Analyze recent sprints (up to 5 most recent)
+            recent_sprints = sorted(sprints, key=lambda s: s.get("id", 0), reverse=True)[:5]
+            project_analysis = {}
+            total_multi_project_sprints = 0
+            
+            for sprint in recent_sprints:
+                sprint_id = sprint.get("id")
+                if not sprint_id:
+                    continue
+                    
+                try:
+                    issues = await self.get_sprint_issues(sprint_id, detect_meta_board=False)
+                    if not issues:
+                        continue
+                    
+                    # Count projects in this sprint
+                    sprint_projects = set()
+                    for issue in issues:
+                        project_key = issue.get("fields", {}).get("project", {}).get("key")
+                        if project_key:
+                            sprint_projects.add(project_key)
+                    
+                    if len(sprint_projects) > 1:
+                        total_multi_project_sprints += 1
+                    
+                    # Track project frequency across sprints
+                    for project_key in sprint_projects:
+                        if project_key not in project_analysis:
+                            project_analysis[project_key] = {
+                                "sprint_count": 0,
+                                "total_issues": 0
+                            }
+                        project_analysis[project_key]["sprint_count"] += 1
+                        project_analysis[project_key]["total_issues"] += len([i for i in issues 
+                                                                              if i.get("fields", {}).get("project", {}).get("key") == project_key])
+                
+                except Exception as e:
+                    logger.warning(f"Error analyzing sprint {sprint_id}: {e}")
+                    continue
+            
+            # Determine if this should be a meta-board
+            is_meta_board = (
+                total_multi_project_sprints >= 2 or  # At least 2 sprints with multiple projects
+                (board_id == 259 and len(project_analysis) > 1) or  # Board 259 with multiple projects
+                len(project_analysis) >= 3  # 3+ projects use this board
+            )
+            
+            # Generate configuration suggestions
+            suggestions = []
+            if is_meta_board:
+                suggestions.extend([
+                    {
+                        "type": "aggregation_rule",
+                        "rule": "project_based_grouping",
+                        "description": "Group tasks by source project for reporting"
+                    },
+                    {
+                        "type": "validation_rule", 
+                        "rule": "cross_project_dependency_check",
+                        "description": "Validate dependencies between projects"
+                    }
+                ])
+                
+                if board_id == 259:
+                    suggestions.append({
+                        "type": "special_configuration",
+                        "rule": "board_259_meta_configuration",
+                        "description": "Apply Board 259 specific meta-board configuration"
+                    })
+            
+            return {
+                "is_meta_board": is_meta_board,
+                "board_id": board_id,
+                "analysis": {
+                    "analyzed_sprints": len(recent_sprints),
+                    "multi_project_sprints": total_multi_project_sprints,
+                    "unique_projects": len(project_analysis),
+                    "project_distribution": project_analysis
+                },
+                "suggestions": suggestions,
+                "confidence": self._calculate_meta_board_confidence(
+                    total_multi_project_sprints, 
+                    len(project_analysis), 
+                    board_id
+                )
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to analyze board {board_id} for meta-board configuration: {e}")
+            return {
+                "is_meta_board": False,
+                "error": str(e),
+                "suggestions": []
+            }
+    
+    def _calculate_meta_board_confidence(
+        self, 
+        multi_project_sprints: int, 
+        unique_projects: int, 
+        board_id: int
+    ) -> float:
+        """Calculate confidence score for meta-board recommendation."""
+        confidence = 0.0
+        
+        # Base confidence on multi-project sprint frequency
+        if multi_project_sprints >= 3:
+            confidence += 0.4
+        elif multi_project_sprints >= 2:
+            confidence += 0.3
+        elif multi_project_sprints >= 1:
+            confidence += 0.2
+        
+        # Add confidence based on project diversity
+        if unique_projects >= 4:
+            confidence += 0.3
+        elif unique_projects >= 3:
+            confidence += 0.2
+        elif unique_projects >= 2:
+            confidence += 0.1
+        
+        # Special boost for Board 259
+        if board_id == 259:
+            confidence += 0.3
+        
+        return min(confidence, 1.0)  # Cap at 1.0
 
     async def close(self):
         """Close the JIRA client connection."""

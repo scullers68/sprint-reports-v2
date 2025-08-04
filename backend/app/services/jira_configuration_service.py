@@ -91,9 +91,15 @@ class JiraConfigurationService:
                 instance_type = self._detect_instance_type(config.url)
             
             # Create configuration model
-            auth_method_value = config.auth_method.value
-            status_value = ConnectionStatus.ACTIVE.value if test_connection else ConnectionStatus.PENDING.value
-            instance_type_value = JiraInstanceType.CLOUD.value if instance_type else JiraInstanceType.SERVER.value
+            # Ensure we use string values for enums, not enum objects
+            if isinstance(config.auth_method, str):
+                auth_method_value = config.auth_method
+            else:
+                auth_method_value = config.auth_method.value
+                
+            status_value = 'active' if test_connection else 'pending'
+            instance_type_value = 'cloud' if instance_type else 'server'
+            
             
             jira_config = JiraConfiguration(
                 name=name,
@@ -559,7 +565,7 @@ class JiraConfigurationService:
         try:
             client = JiraAPIClient(
                 url=config.url,
-                auth_method=config.auth_method.value,
+                auth_method=config.auth_method,
                 email=config.email,
                 api_token=config.api_token,
                 username=config.username,
@@ -576,7 +582,7 @@ class JiraConfigurationService:
                 connection_valid=connection_valid,
                 configuration={
                     "url": config.url,
-                    "auth_method": config.auth_method.value,
+                    "auth_method": config.auth_method,
                     "is_cloud": client.is_cloud,
                     "api_version": client.preferred_api_version
                 },
@@ -595,7 +601,7 @@ class JiraConfigurationService:
                 connection_valid=False,
                 configuration={
                     "url": config.url,
-                    "auth_method": config.auth_method.value,
+                    "auth_method": config.auth_method,
                     "is_cloud": None,
                     "api_version": None
                 },

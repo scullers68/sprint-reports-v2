@@ -15,8 +15,8 @@ Implement database model to store JIRA connection configurations securely with p
 
 ## Acceptance Criteria
 
-- [ ] Add created_at
-- [ ] updated_at and last_tested_at timestamp fields
+- [x] Add created_at
+- [x] updated_at and last_tested_at timestamp fields
 
 ## Implementation Plan
 
