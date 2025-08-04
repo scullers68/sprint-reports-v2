@@ -1,7 +1,7 @@
 ---
 id: task-078
 title: Meta-Board Detection and Configuration
-status: To Do
+status: In Progress
 assignee:
   - >-
     [ ] Extend Sprint model to include meta_board_type field and project_source
@@ -15,6 +15,7 @@ assignee:
     [ ] Create database migration to support new meta-board fields without
     breaking existing functionality
 created_date: '2025-08-04'
+updated_date: '2025-08-04'
 labels: []
 dependencies: []
 ---
