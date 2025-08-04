@@ -16,40 +16,35 @@ Enhance capacity management system to analyze how single team capacity is distri
 
 ## Implementation Plan
 
-## Architectural Specification for Multi-Project Capacity Analysis
+## Implementation Plan Based on Architecture Analysis
 
-### Phase 1: Data Model Extensions
-1. Extend DisciplineTeamCapacity model to support project context
-2. Create ProjectCapacityAllocation model for project-based allocation tracking
-3. Add project-aware capacity planning relationships
+### Phase 1: Data Model Extensions (Priority 1)
+1. Extend /backend/app/models/capacity.py with ProjectCapacityAllocation model
+2. Add project-aware relationships to existing DisciplineTeamCapacity model
+3. Create database migration for new model relationships
 
-### Phase 2: Service Layer Enhancements  
-4. Extend existing capacity service patterns from models/capacity.py
+### Phase 2: Service Layer Implementation (Priority 2)  
+4. Create /backend/app/services/capacity_service.py following existing service patterns
 5. Implement capacity distribution analysis algorithms
-6. Create capacity forecasting service following existing service patterns
+6. Add capacity forecasting methods with project context
+7. Create capacity conflict detection logic
 
-### Phase 3: API Layer Extensions
-7. Extend existing capacity endpoints in api/v1/endpoints/capacity.py
-8. Add project-based capacity reporting endpoints
-9. Implement capacity optimization recommendation APIs
+### Phase 3: API Layer Extensions (Priority 3)
+8. Extend /backend/app/api/v1/endpoints/capacity.py with multi-project endpoints
+9. Add project-based capacity reporting endpoints
+10. Implement capacity optimization recommendation APIs
 
-### Phase 4: Analytics & Reporting
-10. Create capacity utilization analytics following existing report patterns
-11. Implement historical capacity analysis
-12. Add capacity conflict detection and resolution algorithms
+### Phase 4: Analytics & Algorithms (Priority 4)
+11. Create capacity utilization analytics algorithms
+12. Implement historical capacity analysis methods
+13. Add capacity optimization recommendation engine
 
-### Phase 5: Integration & Compatibility
-13. Ensure backward compatibility with single-project workflows
-14. Integrate with existing Sprint and Queue models
-15. Add comprehensive validation and error handling
+### Phase 5: Testing & Validation (Priority 5)
+14. Add comprehensive unit tests following existing test patterns
+15. Ensure backward compatibility with single-project workflows
+16. Validate integration with existing Sprint and Queue models
 
-### Architecture Compliance:
-- Extends existing SQLAlchemy model patterns in /app/models/
-- Follows current service architecture in /app/services/
-- Builds upon existing FastAPI router structure
-- Maintains ADR-001, ADR-002, ADR-003 compliance
-- Preserves existing database relationships and constraints
-
+Architecture compliance confirmed - extending existing patterns rather than creating new files where possible.
 ## Implementation Notes
 
 ## ARCHITECTURE COMPLETE - READY FOR IMPLEMENTATION
