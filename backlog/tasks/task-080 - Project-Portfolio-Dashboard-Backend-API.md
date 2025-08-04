@@ -1,7 +1,7 @@
 ---
 id: task-080
 title: Project Portfolio Dashboard Backend API
-status: To Do
+status: In Progress
 assignee:
   - >-
     [ ] Create /api/v1/meta-boards/{board_id}/project-portfolio endpoint for
@@ -14,6 +14,7 @@ assignee:
     API responses include project health indicators and risk metrics, [ ] Add
     comprehensive error handling and validation for meta-board specific requests
 created_date: '2025-08-04'
+updated_date: '2025-08-04'
 labels: []
 dependencies: []
 ---
