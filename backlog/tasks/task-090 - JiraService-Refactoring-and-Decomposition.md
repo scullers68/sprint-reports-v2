@@ -36,3 +36,75 @@ Refactor the monolithic 2,000-line JiraService into focused, maintainable servic
 7. Maintain backward compatibility facade in main JiraService
 8. Validate all existing tests pass after refactoring
 9. Ensure single responsibility principle across all services
+
+## Implementation Notes
+
+ARCHITECTURAL ANALYSIS COMPLETE
+
+## Service Decomposition Specification
+
+### Current Monolithic Structure Analysis:
+- 2,000+ line JiraService handling multiple responsibilities
+- JiraAPIClient already well-structured (lines 25-304)
+- Clear separation opportunities identified
+
+### Proposed Service Architecture:
+
+1. **JiraAPIClient** (HTTP Layer) - ALREADY EXTRACTED
+   - Location: Lines 25-304 in current file
+   - Responsibilities: HTTP operations, auth, rate limiting
+   - Status: ✅ Well-designed, move to separate file
+
+2. **JiraService** (Core CRUD) - EXTRACT LINES 307-586, 756-851
+   - Methods: get_sprints(), get_sprint_issues(), get_boards(), get_projects(), search_issues(), get_issue(), test_connection()
+   - Focus: Basic JIRA resource operations
+   - Dependencies: JiraAPIClient
+
+3. **MetaBoardService** (Board 259 Logic) - EXTRACT LINES 1085-2000
+   - Methods: detect_meta_board_configuration(), _enhance_issues_with_project_source(), sync_meta_board_data()
+   - Focus: Meta-board detection, Board 259 specialization, project source tracking
+   - Dependencies: JiraService, JiraFieldMappingService
+
+4. **JiraSyncService** (Synchronization) - EXTRACT LINES 872-1084
+   - Methods: process_webhook_event(), validate_webhook_configuration()
+   - Focus: Webhook processing, data synchronization, change tracking
+   - Dependencies: JiraService, MetaBoardService
+
+5. **JiraFieldMappingService** (Field Operations) - EXTRACT LINES 439-755
+   - Methods: get_sprint_issues_with_mapping(), discover_field_mappings(), _apply_project_specific_field_mappings()
+   - Focus: Field mapping, transformation, project-specific mappings
+   - Dependencies: JiraAPIClient, external FieldMappingService
+
+### Key Implementation Requirements:
+
+1. **Preserve Existing API Contracts**: All existing method signatures must remain unchanged
+2. **Dependency Injection Pattern**: Services must be properly injected, not directly instantiated
+3. **Backward Compatibility**: Main JiraService facade must delegate to appropriate services
+4. **Test Coverage**: All existing tests must pass without modification
+5. **Configuration Management**: Settings injection must be preserved across services
+
+### Files to Create:
+- 
+- 
+- 
+- 
+- 
+- 
+
+### Files to Modify:
+-  (convert to facade pattern)
+
+### Integration Points:
+- Field Mapping Service: 
+- Database Sessions: AsyncSession dependency injection
+- Settings: Configuration injection for API credentials
+- Logging: Consistent logger usage across services
+
+### Compliance Verification:
+✅ ADR-001: Extends existing microservices architecture
+✅ ADR-002: Maintains SQLAlchemy model relationships  
+✅ ADR-003: Preserves API contract patterns
+✅ SOLID Principles: Each service has single responsibility
+✅ Dependency Injection: Services properly injectable and testable
+
+READY FOR FULLSTACK-ENGINEER IMPLEMENTATION
