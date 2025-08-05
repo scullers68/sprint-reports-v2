@@ -1,9 +1,10 @@
 ---
 id: task-090
 title: JiraService Refactoring and Decomposition
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-05'
+updated_date: '2025-08-05'
 labels: []
 dependencies: []
 ---
