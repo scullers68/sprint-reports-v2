@@ -1,9 +1,10 @@
 ---
 id: task-091
 title: Meta-Board Project Detection and Mapping
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-08-05'
+updated_date: '2025-08-05'
 labels: []
 dependencies: []
 ---
